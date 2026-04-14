@@ -1,0 +1,15 @@
+name: DisplayGUI
+version: 1.0-SNAPSHOT
+main: de.mcbesser.displaygui.DisplayGUIPlugin
+api-version: '1.21'
+author: McBesser
+commands:
+  displaygui:
+    description: Verwaltung fuer DisplayGUI Banner-Displays
+    usage: /displaygui <bind|remove|reload>
+    permission: displaygui.admin
+permissions:
+  displaygui.use:
+    default: true
+  displaygui.admin:
+    default: op

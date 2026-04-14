@@ -1,0 +1,7 @@
+display:
+  refresh-ticks: 10
+  max-view-distance: 24.0
+
+crafting:
+  default-amount: 1
+  max-amount: 64
