@@ -201,17 +201,11 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
         stack.setAmount(Math.max(1, Math.min(data.craftAmount(), stack.getMaxStackSize())));
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
-            if (data.renderMode() == DisplayRenderMode.RESULT_WITH_AMOUNT) {
-                meta.lore(List.of(
-                        Component.text("Anzeige: Ergebnis mit Menge", NamedTextColor.YELLOW),
-                        Component.text("Menge: " + data.craftAmount(), NamedTextColor.WHITE)
-                ));
-            } else {
-                meta.lore(List.of(
-                        Component.text("Anzeige: Ergebnis", NamedTextColor.YELLOW),
-                        Component.text("Menge: " + data.craftAmount(), NamedTextColor.WHITE)
-                ));
-            }
+            meta.lore(List.of(
+                    Component.text("Menge: " + data.craftAmount(), NamedTextColor.WHITE),
+                    Component.text("Linksklick: Rezept craften", NamedTextColor.WHITE),
+                    Component.text("Rechtsklick: Maximal craften", NamedTextColor.WHITE)
+            ));
             stack.setItemMeta(meta);
         }
         return stack;
