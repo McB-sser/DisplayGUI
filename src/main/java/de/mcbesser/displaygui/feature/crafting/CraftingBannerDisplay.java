@@ -117,7 +117,7 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                     3,
                     new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
                     recipeMatch != null ? recipeMatch.result().clone() : new ItemStack(Material.GRAY_STAINED_GLASS_PANE),
-                    recipeMatch != null ? Component.text("Output", NamedTextColor.GREEN) : Component.text("Kein Rezept", NamedTextColor.RED),
+                    recipeMatch != null ? resultAmountText() : Component.text("Kein Rezept", NamedTextColor.RED),
                     Component.text(defaultLabel(3, "Ofen-Ergebnis"), NamedTextColor.YELLOW),
                     0.24f,
                     0.40f,
@@ -188,7 +188,7 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                 displaySlot,
                 new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
                 result,
-                Component.empty(),
+                resultAmountText(),
                 Component.text(defaultLabel(displaySlot, "Rezept craften"), NamedTextColor.GREEN),
                 0.26f,
                 0.50f,
@@ -209,6 +209,10 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
             stack.setItemMeta(meta);
         }
         return stack;
+    }
+
+    private Component resultAmountText() {
+        return Component.text("x" + data.craftAmount(), NamedTextColor.WHITE);
     }
 
     private ItemStack iconForMaterialName(String materialName) {
