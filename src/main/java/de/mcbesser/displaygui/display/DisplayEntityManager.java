@@ -408,7 +408,7 @@ public final class DisplayEntityManager {
     }
 
     private Location transform(Location base, double localX, double localY, double localZ, float yaw) {
-        double radians = Math.toRadians(-yaw);
+        double radians = Math.toRadians(yaw);
         double cos = Math.cos(radians);
         double sin = Math.sin(radians);
         double worldX = (localX * cos) - (localZ * sin);
