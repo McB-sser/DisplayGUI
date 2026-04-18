@@ -88,7 +88,7 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                 slots.add(buttonSlot(
                         2,
                         Material.LIME_STAINED_GLASS_PANE,
-                        "Menge erhoehen",
+                        "Menge erh\u00f6hen",
                         "",
                         List.of(
                                 Component.text("Linksklick: +1", NamedTextColor.WHITE),

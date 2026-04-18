@@ -365,11 +365,11 @@ public final class DisplayEntityManager {
         Location baseLocation = transform(anchor.location(), 0.0, 0.0, 0.0, anchor.yaw());
         BlockDisplay base = anchor.location().getWorld().spawn(baseLocation, BlockDisplay.class, entity -> {
             prepare(entity, renderable.uniqueId(), -1, "stand");
-            entity.setBlock(org.bukkit.Material.DARK_OAK_SLAB.createBlockData());
+            entity.setBlock(org.bukkit.Material.DARK_OAK_PRESSURE_PLATE.createBlockData());
             entity.setTransformation(new Transformation(
                     new Vector3f(-0.5f, 0.0f, -0.5f),
                     new Quaternionf(),
-                    new Vector3f(1.0f, 0.16f, 1.0f),
+                    new Vector3f(1.0f, 1.0f, 1.0f),
                     new Quaternionf()
             ));
             entity.setRotation(anchor.yaw(), 0.0f);

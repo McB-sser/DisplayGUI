@@ -361,9 +361,15 @@ public final class CraftingBannerManager {
         }
 
         inventory.setItem(4, named(Material.WRITABLE_BOOK, "Titel bearbeiten"));
-        inventory.setItem(39, named(Material.RED_STAINED_GLASS_PANE, "-1"));
+        inventory.setItem(39, named(Material.RED_STAINED_GLASS_PANE, "Menge verringern", List.of(
+                Component.text("Linksklick: -1", NamedTextColor.WHITE),
+                Component.text("Rechtsklick: -10", NamedTextColor.WHITE)
+        )));
         inventory.setItem(40, named(Material.SLIME_BALL, "Menge: " + data.craftAmount()));
-        inventory.setItem(41, named(Material.LIME_STAINED_GLASS_PANE, "+1"));
+        inventory.setItem(41, named(Material.LIME_STAINED_GLASS_PANE, "Menge erh\u00f6hen", List.of(
+                Component.text("Linksklick: +1", NamedTextColor.WHITE),
+                Component.text("Rechtsklick: +10", NamedTextColor.WHITE)
+        )));
         inventory.setItem(17, modeItem(Material.PAPER, "Anzeige Rezept", data.renderMode() == DisplayRenderMode.RECIPE_ONLY));
         inventory.setItem(26, modeItem(Material.CRAFTING_TABLE, "Anzeige Rezept + Ergebnis", data.renderMode() == DisplayRenderMode.RECIPE_AND_RESULT));
         inventory.setItem(35, modeItem(Material.CHEST, "Anzeige Ergebnis", data.renderMode() == DisplayRenderMode.RESULT_ONLY));
@@ -401,7 +407,7 @@ public final class CraftingBannerManager {
         for (int i = start; i < end; i++) {
             inventory.setItem(i - start, itemFromName(data.matrix().get(i)));
         }
-        inventory.setItem(GENERIC_PREV_SLOT, named(Material.ARROW, "Seite zurueck"));
+        inventory.setItem(GENERIC_PREV_SLOT, named(Material.ARROW, "Seite zur\u00fcck"));
         inventory.setItem(GENERIC_PAGE_SLOT, named(Material.BOOK, "Seite " + (currentPage + 1) + "/" + (maxPage + 1)));
         inventory.setItem(GENERIC_NEXT_SLOT, named(Material.ARROW, "Seite vor"));
 
@@ -421,9 +427,15 @@ public final class CraftingBannerManager {
             inventory.setItem(FURNACE_SLOTS[i], itemFromName(data.matrix().get(i)));
         }
 
-        inventory.setItem(DECREASE_SLOT - 27, named(Material.RED_STAINED_GLASS_PANE, "-1"));
+        inventory.setItem(DECREASE_SLOT - 27, named(Material.RED_STAINED_GLASS_PANE, "Menge verringern", List.of(
+                Component.text("Linksklick: -1", NamedTextColor.WHITE),
+                Component.text("Rechtsklick: -10", NamedTextColor.WHITE)
+        )));
         inventory.setItem(INFO_SLOT - 27, named(Material.SLIME_BALL, "Menge: " + data.craftAmount()));
-        inventory.setItem(INCREASE_SLOT - 27, named(Material.LIME_STAINED_GLASS_PANE, "+1"));
+        inventory.setItem(INCREASE_SLOT - 27, named(Material.LIME_STAINED_GLASS_PANE, "Menge erh\u00f6hen", List.of(
+                Component.text("Linksklick: +1", NamedTextColor.WHITE),
+                Component.text("Rechtsklick: +10", NamedTextColor.WHITE)
+        )));
 
         RecipeMatch match = findRecipeMatch(data);
         if (match != null) {
@@ -491,12 +503,12 @@ public final class CraftingBannerManager {
         }
 
         if (rawSlot == 39) {
-            adjustAmount(data, click.isRightClick() ? -8 : -1);
+            adjustAmount(data, click.isRightClick() ? -10 : -1);
             openCraftingMenu(player, data.id());
             return;
         }
         if (rawSlot == 41) {
-            adjustAmount(data, click.isRightClick() ? 8 : 1);
+            adjustAmount(data, click.isRightClick() ? 10 : 1);
             openCraftingMenu(player, data.id());
             return;
         }
@@ -552,12 +564,12 @@ public final class CraftingBannerManager {
 
     private void handleFurnaceMenuClick(Player player, CraftingBannerData data, int rawSlot, ClickType click) {
         if (rawSlot == 14) {
-            adjustAmount(data, click.isRightClick() ? -8 : -1);
+            adjustAmount(data, click.isRightClick() ? -10 : -1);
             openFurnaceMenu(player, data);
             return;
         }
         if (rawSlot == 16) {
-            adjustAmount(data, click.isRightClick() ? 8 : 1);
+            adjustAmount(data, click.isRightClick() ? 10 : 1);
             openFurnaceMenu(player, data);
             return;
         }
@@ -634,7 +646,7 @@ public final class CraftingBannerManager {
         save();
         refreshDisplay(data);
         if (actor != null) {
-            actor.sendMessage(Component.text("Beschriftung fuer Slot " + (slot + 1) + " gesetzt.", NamedTextColor.GREEN));
+            actor.sendMessage(Component.text("Beschriftung f\u00fcr Slot " + (slot + 1) + " gesetzt.", NamedTextColor.GREEN));
         }
         return true;
     }
@@ -648,7 +660,7 @@ public final class CraftingBannerManager {
         save();
         refreshDisplay(data);
         if (actor != null) {
-            actor.sendMessage(Component.text("Beschriftung fuer Slot " + (slot + 1) + " gesetzt.", NamedTextColor.GREEN));
+            actor.sendMessage(Component.text("Beschriftung f\u00fcr Slot " + (slot + 1) + " gesetzt.", NamedTextColor.GREEN));
         }
         return true;
     }
@@ -662,7 +674,7 @@ public final class CraftingBannerManager {
         save();
         refreshDisplay(data);
         if (actor != null) {
-            actor.sendMessage(Component.text("Klickaktion fuer Slot " + (slot + 1) + " ist jetzt " + data.slotActions().get(slot), NamedTextColor.GREEN));
+            actor.sendMessage(Component.text("Klickaktion f\u00fcr Slot " + (slot + 1) + " ist jetzt " + data.slotActions().get(slot), NamedTextColor.GREEN));
         }
         return true;
     }
@@ -676,7 +688,7 @@ public final class CraftingBannerManager {
         save();
         refreshDisplay(data);
         if (actor != null) {
-            actor.sendMessage(Component.text("Klickaktion fuer Slot " + (slot + 1) + " ist jetzt " + data.slotActions().get(slot), NamedTextColor.GREEN));
+            actor.sendMessage(Component.text("Klickaktion f\u00fcr Slot " + (slot + 1) + " ist jetzt " + data.slotActions().get(slot), NamedTextColor.GREEN));
         }
         return true;
     }
@@ -684,7 +696,7 @@ public final class CraftingBannerManager {
     private void craftConfiguredRecipe(Player player, CraftingBannerData data, boolean maxMode) {
         RecipeMatch match = findRecipeMatch(data);
         if (match == null) {
-            player.sendMessage(Component.text("Kein gueltiges Rezept vorhanden.", NamedTextColor.RED));
+            player.sendMessage(Component.text("Kein g\u00fcltiges Rezept vorhanden.", NamedTextColor.RED));
             return;
         }
 
@@ -870,10 +882,17 @@ public final class CraftingBannerManager {
     }
 
     private ItemStack named(Material material, String name) {
+        return named(material, name, List.of());
+    }
+
+    private ItemStack named(Material material, String name, List<Component> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.displayName(Component.text(name, NamedTextColor.YELLOW));
+            if (lore != null && !lore.isEmpty()) {
+                meta.lore(lore);
+            }
             item.setItemMeta(meta);
         }
         return item;
