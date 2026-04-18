@@ -10,15 +10,18 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Banner;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Furnace;
 import org.bukkit.block.TileState;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.ClickType;
@@ -97,6 +100,9 @@ public final class CraftingBannerManager {
                 data.setY(entry.getInt("y"));
                 data.setZ(entry.getInt("z"));
                 data.setYaw((float) entry.getDouble("yaw"));
+                data.setLinkedBlockX(entry.getInt("linked-block-x", Integer.MIN_VALUE));
+                data.setLinkedBlockY(entry.getInt("linked-block-y", Integer.MIN_VALUE));
+                data.setLinkedBlockZ(entry.getInt("linked-block-z", Integer.MIN_VALUE));
                 data.setCraftAmount(clampAmount(entry.getInt("craft-amount", 1)));
                 data.setTitle(entry.getString("title", "DisplayGUI"));
                 DisplayRenderMode renderMode = DisplayRenderMode.fromId(entry.getString("render-mode", DisplayRenderMode.RECIPE_ONLY.id()));
@@ -156,6 +162,9 @@ public final class CraftingBannerManager {
             config.set(path + ".y", data.y());
             config.set(path + ".z", data.z());
             config.set(path + ".yaw", data.yaw());
+            config.set(path + ".linked-block-x", data.hasLinkedBlock() ? data.linkedBlockX() : null);
+            config.set(path + ".linked-block-y", data.hasLinkedBlock() ? data.linkedBlockY() : null);
+            config.set(path + ".linked-block-z", data.hasLinkedBlock() ? data.linkedBlockZ() : null);
             config.set(path + ".preset", data.preset().id());
             config.set(path + ".custom-columns", data.customColumns());
             config.set(path + ".custom-rows", data.customRows());
@@ -196,7 +205,24 @@ public final class CraftingBannerManager {
         if (!BlockUtil.isBanner(block.getType())) {
             return false;
         }
-        UUID bannerId = getOrCreateBannerId(block);
+        UUID existingBannerId = getBannerId(block);
+        UUID bannerId = existingBannerId == null ? UUID.randomUUID() : existingBannerId;
+        Block linkedFurnace = preset == DisplayPreset.FURNACE_1X5 ? findLinkedFurnaceBlock(block) : null;
+        if (preset == DisplayPreset.FURNACE_1X5 && linkedFurnace == null) {
+            if (actor != null) {
+                actor.sendMessage(Component.text("Kein passender Ofen f\u00fcr dieses Banner gefunden.", NamedTextColor.RED));
+            }
+            displayEntityManager.unregister(bannerId);
+            return false;
+        }
+        if (preset == DisplayPreset.FURNACE_1X5 && isLinkedToOtherBanner(linkedFurnace, bannerId)) {
+            if (actor != null) {
+                actor.sendMessage(Component.text("Dieser Ofen ist bereits mit einem anderen Display verbunden.", NamedTextColor.RED));
+            }
+            displayEntityManager.unregister(bannerId);
+            return false;
+        }
+        ensureBannerId(block, bannerId);
         CraftingBannerData data = banners.computeIfAbsent(bannerId, CraftingBannerData::new);
         if (data.bannerItem() == null) {
             data.setBannerItem(new ItemStack(block.getType()));
@@ -207,6 +233,7 @@ public final class CraftingBannerManager {
         data.setZ(block.getZ());
         data.setYaw(BlockUtil.resolveYaw(block));
         data.setPreset(preset);
+        linkPresetTarget(data, block);
         data.setCustomColumns(clampColumns(columns));
         data.setCustomRows(clampRows(rows));
         if (data.title() == null || data.title().isBlank() || data.title().equals("DisplayGUI")) {
@@ -245,7 +272,7 @@ public final class CraftingBannerManager {
         Material below = block.getRelative(0, -1, 0).getType();
         if (below == Material.CRAFTING_TABLE) {
             bindBanner(block, DisplayPreset.CRAFTING_3X3, null);
-        } else if (below == Material.FURNACE || below == Material.BLAST_FURNACE || below == Material.SMOKER) {
+        } else if (findLinkedFurnaceBlock(block) != null) {
             bindBanner(block, DisplayPreset.FURNACE_1X5, null);
         }
     }
@@ -792,6 +819,10 @@ public final class CraftingBannerManager {
             displayEntityManager.unregister(data.id());
             return;
         }
+        if (data.preset() == DisplayPreset.FURNACE_1X5 && !isPrimaryLinkedBanner(data)) {
+            displayEntityManager.unregister(data.id());
+            return;
+        }
         RecipeMatch match = findRecipeMatch(data);
         if (data.preset() == DisplayPreset.FURNACE_1X5) {
             displayEntityManager.register(new CraftingBannerDisplay(
@@ -841,24 +872,7 @@ public final class CraftingBannerManager {
     }
 
     private float captureStoredFurnaceExperience(Furnace furnace, ItemStack input, ItemStack result, Material cookerType) {
-        float storedExperience = reflectStoredFurnaceExperience(furnace);
-        if (storedExperience > 0.0f) {
-            return storedExperience;
-        }
-        return captureResultExperienceEstimate(input, result, cookerType);
-    }
-
-    private float captureResultExperienceEstimate(ItemStack input, ItemStack result, Material cookerType) {
-        if (input == null || input.getType() == Material.AIR || result == null || result.getType() == Material.AIR) {
-            return 0.0f;
-        }
-        Recipe recipe = recipeMatcher.adaptCookingRecipe(input, DisplayPreset.FURNACE_1X5, cookerType) == null
-                ? null
-                : recipeMatcher.adaptCookingRecipe(input, DisplayPreset.FURNACE_1X5, cookerType).recipe();
-        if (!(recipe instanceof CookingRecipe<?> cookingRecipe)) {
-            return 0.0f;
-        }
-        return cookingRecipe.getExperience() * result.getAmount();
+        return reflectStoredFurnaceExperience(furnace);
     }
 
     private float reflectStoredFurnaceExperience(Furnace furnace) {
@@ -914,17 +928,139 @@ public final class CraftingBannerManager {
     }
 
     private Furnace resolveFurnace(CraftingBannerData data) {
-        Block anchorBlock = resolveBlock(data);
-        if (anchorBlock == null) {
+        Block furnaceBlock = resolveLinkedBlock(data);
+        if (furnaceBlock == null) {
+            Block anchorBlock = resolveBlock(data);
+            if (anchorBlock == null) {
+                return null;
+            }
+            furnaceBlock = anchorBlock.getRelative(0, -1, 0);
+        }
+        BlockState state = furnaceBlock.getState();
+        return state instanceof Furnace furnace ? furnace : null;
+    }
+
+    private Block resolveLinkedBlock(CraftingBannerData data) {
+        if (!data.hasLinkedBlock()) {
             return null;
         }
-        BlockState state = anchorBlock.getRelative(0, -1, 0).getState();
-        return state instanceof Furnace furnace ? furnace : null;
+        World world = Bukkit.getWorld(data.world());
+        return world == null ? null : world.getBlockAt(data.linkedBlockX(), data.linkedBlockY(), data.linkedBlockZ());
     }
 
     private Material resolveCookerType(CraftingBannerData data) {
         Furnace furnace = resolveFurnace(data);
         return furnace == null ? Material.FURNACE : furnace.getBlock().getType();
+    }
+
+    private void linkPresetTarget(CraftingBannerData data, Block bannerBlock) {
+        if (data.preset() == DisplayPreset.FURNACE_1X5) {
+            Block linkedFurnace = findLinkedFurnaceBlock(bannerBlock);
+            if (linkedFurnace != null) {
+                data.setLinkedBlockX(linkedFurnace.getX());
+                data.setLinkedBlockY(linkedFurnace.getY());
+                data.setLinkedBlockZ(linkedFurnace.getZ());
+            }
+            return;
+        }
+        data.setLinkedBlockX(Integer.MIN_VALUE);
+        data.setLinkedBlockY(Integer.MIN_VALUE);
+        data.setLinkedBlockZ(Integer.MIN_VALUE);
+    }
+
+    private boolean isLinkedToOtherBanner(Block block, UUID currentBannerId) {
+        if (block == null) {
+            return false;
+        }
+        for (CraftingBannerData other : banners.values()) {
+            if (other.id().equals(currentBannerId) || !other.hasLinkedBlock()) {
+                continue;
+            }
+            if (other.linkedBlockX() == block.getX()
+                    && other.linkedBlockY() == block.getY()
+                    && other.linkedBlockZ() == block.getZ()
+                    && other.world() != null
+                    && other.world().equals(block.getWorld().getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isPrimaryLinkedBanner(CraftingBannerData data) {
+        if (data.preset() != DisplayPreset.FURNACE_1X5 || !data.hasLinkedBlock()) {
+            return true;
+        }
+        CraftingBannerData winner = data;
+        for (CraftingBannerData other : banners.values()) {
+            if (other.id().equals(data.id()) || !other.hasLinkedBlock()) {
+                continue;
+            }
+            if (!sameLinkedBlock(data, other)) {
+                continue;
+            }
+            if (other.id().toString().compareTo(winner.id().toString()) < 0) {
+                winner = other;
+            }
+        }
+        return winner.id().equals(data.id());
+    }
+
+    private boolean sameLinkedBlock(CraftingBannerData left, CraftingBannerData right) {
+        return left.world() != null
+                && left.world().equals(right.world())
+                && left.linkedBlockX() == right.linkedBlockX()
+                && left.linkedBlockY() == right.linkedBlockY()
+                && left.linkedBlockZ() == right.linkedBlockZ();
+    }
+
+    private Block findLinkedFurnaceBlock(Block bannerBlock) {
+        List<Block> candidates = new ArrayList<>();
+        candidates.add(bannerBlock.getRelative(0, -1, 0));
+        candidates.add(bannerBlock.getRelative(BlockFace.NORTH));
+        candidates.add(bannerBlock.getRelative(BlockFace.EAST));
+        candidates.add(bannerBlock.getRelative(BlockFace.SOUTH));
+        candidates.add(bannerBlock.getRelative(BlockFace.WEST));
+
+        Block best = null;
+        int bestScore = Integer.MIN_VALUE;
+        BlockFace bannerFacing = BlockUtil.resolveFacing(bannerBlock);
+        for (Block candidate : candidates) {
+            if (!isFurnaceType(candidate.getType())) {
+                continue;
+            }
+            int score = furnaceLinkScore(candidate, bannerBlock, bannerFacing);
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+
+    private int furnaceLinkScore(Block furnaceBlock, Block bannerBlock, BlockFace bannerFacing) {
+        int score = 0;
+        if (furnaceBlock.getRelative(BlockFace.UP).equals(bannerBlock)) {
+            score += 200;
+        }
+        if (furnaceBlock.getY() == bannerBlock.getY()) {
+            score += 20;
+        }
+        BlockFace furnaceFacing = BlockUtil.resolveFacing(furnaceBlock);
+        if (furnaceBlock.getRelative(furnaceFacing).equals(bannerBlock)) {
+            score += 160;
+        }
+        if (furnaceFacing == bannerFacing) {
+            score += 80;
+        }
+        if (bannerBlock.getRelative(bannerFacing.getOppositeFace()).equals(furnaceBlock)) {
+            score += 40;
+        }
+        return score;
+    }
+
+    private boolean isFurnaceType(Material material) {
+        return material == Material.FURNACE || material == Material.BLAST_FURNACE || material == Material.SMOKER;
     }
 
     private UUID getOrCreateBannerId(Block block) {
@@ -933,12 +1069,16 @@ public final class CraftingBannerManager {
             return existing;
         }
         UUID created = UUID.randomUUID();
+        ensureBannerId(block, created);
+        return created;
+    }
+
+    private void ensureBannerId(Block block, UUID bannerId) {
         BlockState state = block.getState();
         if (state instanceof Banner banner) {
-            banner.getPersistentDataContainer().set(bannerIdKey, PersistentDataType.STRING, created.toString());
+            banner.getPersistentDataContainer().set(bannerIdKey, PersistentDataType.STRING, bannerId.toString());
             banner.update(true, false);
         }
-        return created;
     }
 
     private UUID getBannerId(Block block) {
@@ -1106,6 +1246,9 @@ public final class CraftingBannerManager {
         }
         FurnaceInventory inventory = furnace.getInventory();
         if (slot == 0) {
+            if (isEmptyMainHand(player)) {
+                return takeFurnaceStoredItem(player, inventory, true, rightClick);
+            }
             return insertIntoFurnaceSlot(player, inventory, true, rightClick);
         }
         if (slot == 4) {
@@ -1163,6 +1306,32 @@ public final class CraftingBannerManager {
         return true;
     }
 
+    private boolean takeFurnaceStoredItem(Player player, FurnaceInventory inventory, boolean inputSlot, boolean fullStack) {
+        ItemStack stored = inputSlot ? inventory.getSmelting() : inventory.getFuel();
+        if (stored == null || stored.getType() == Material.AIR) {
+            return false;
+        }
+
+        ItemStack taken = stored.clone();
+        if (!fullStack) {
+            taken.setAmount(1);
+        }
+
+        Map<Integer, ItemStack> overflow = player.getInventory().addItem(taken);
+        int inserted = taken.getAmount() - overflow.values().stream().mapToInt(ItemStack::getAmount).sum();
+        if (inserted <= 0) {
+            return false;
+        }
+
+        stored.setAmount(stored.getAmount() - inserted);
+        if (inputSlot) {
+            inventory.setSmelting(stored.getAmount() <= 0 ? null : stored);
+        } else {
+            inventory.setFuel(stored.getAmount() <= 0 ? null : stored);
+        }
+        return true;
+    }
+
     private boolean takeFurnaceResult(Player player, FurnaceInventory inventory, boolean fullStack) {
         ItemStack result = inventory.getResult();
         if (result == null || result.getType() == Material.AIR) {
@@ -1187,7 +1356,7 @@ public final class CraftingBannerManager {
         if (experience <= 0) {
             return false;
         }
-        player.giveExp(experience);
+        dropExperienceOrbs(player, furnace, experience);
         clearStoredFurnaceExperience(furnace);
         return true;
     }
@@ -1210,6 +1379,38 @@ public final class CraftingBannerManager {
         } catch (ReflectiveOperationException ignored) {
             return 0;
         }
+    }
+
+    private boolean isEmptyMainHand(Player player) {
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        return hand == null || hand.getType() == Material.AIR;
+    }
+
+    private void dropExperienceOrbs(Player player, Furnace furnace, int experience) {
+        World world = furnace.getWorld();
+        var location = furnace.getBlock().getLocation().add(0.5, 1.0, 0.5);
+        int remaining = experience;
+        while (remaining > 0) {
+            int orbValue = splitOrbValue(remaining);
+            remaining -= orbValue;
+            ExperienceOrb orb = world.spawn(location, ExperienceOrb.class);
+            orb.setExperience(orbValue);
+        }
+        world.playSound(location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8f, 1.15f);
+    }
+
+    private int splitOrbValue(int remaining) {
+        if (remaining >= 2477) return 2477;
+        if (remaining >= 1237) return 1237;
+        if (remaining >= 617) return 617;
+        if (remaining >= 307) return 307;
+        if (remaining >= 149) return 149;
+        if (remaining >= 73) return 73;
+        if (remaining >= 37) return 37;
+        if (remaining >= 17) return 17;
+        if (remaining >= 7) return 7;
+        if (remaining >= 3) return 3;
+        return 1;
     }
 
     private int calculateAwardedExperience(float experiencePerRecipe, int recipeCount) {

@@ -13,6 +13,9 @@ public final class CraftingBannerData {
     private int y;
     private int z;
     private float yaw;
+    private int linkedBlockX;
+    private int linkedBlockY;
+    private int linkedBlockZ;
     private DisplayPreset preset;
     private int customColumns;
     private int customRows;
@@ -32,6 +35,9 @@ public final class CraftingBannerData {
         this.customRows = 3;
         this.craftAmount = 1;
         this.title = "DisplayGUI";
+        this.linkedBlockX = Integer.MIN_VALUE;
+        this.linkedBlockY = Integer.MIN_VALUE;
+        this.linkedBlockZ = Integer.MIN_VALUE;
         this.bannerItem = null;
         this.renderMode = DisplayRenderMode.RECIPE_ONLY;
         this.resultPosition = DisplayResultPosition.RIGHT;
@@ -84,6 +90,34 @@ public final class CraftingBannerData {
 
     public void setYaw(float yaw) {
         this.yaw = yaw;
+    }
+
+    public int linkedBlockX() {
+        return linkedBlockX;
+    }
+
+    public void setLinkedBlockX(int linkedBlockX) {
+        this.linkedBlockX = linkedBlockX;
+    }
+
+    public int linkedBlockY() {
+        return linkedBlockY;
+    }
+
+    public void setLinkedBlockY(int linkedBlockY) {
+        this.linkedBlockY = linkedBlockY;
+    }
+
+    public int linkedBlockZ() {
+        return linkedBlockZ;
+    }
+
+    public void setLinkedBlockZ(int linkedBlockZ) {
+        this.linkedBlockZ = linkedBlockZ;
+    }
+
+    public boolean hasLinkedBlock() {
+        return linkedBlockX != Integer.MIN_VALUE && linkedBlockY != Integer.MIN_VALUE && linkedBlockZ != Integer.MIN_VALUE;
     }
 
     public DisplayPreset preset() {

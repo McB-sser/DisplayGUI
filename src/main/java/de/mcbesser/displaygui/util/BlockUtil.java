@@ -17,14 +17,18 @@ public final class BlockUtil {
     }
 
     public static float resolveYaw(Block block) {
+        return faceToYaw(resolveFacing(block));
+    }
+
+    public static BlockFace resolveFacing(Block block) {
         BlockData data = block.getBlockData();
         if (data instanceof Directional directional) {
-            return faceToYaw(directional.getFacing());
+            return directional.getFacing();
         }
         if (data instanceof Rotatable rotatable) {
-            return faceToYaw(rotatable.getRotation());
+            return rotatable.getRotation();
         }
-        return 180.0f;
+        return BlockFace.NORTH;
     }
 
     public static float faceToYaw(BlockFace face) {
