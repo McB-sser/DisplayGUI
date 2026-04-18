@@ -46,6 +46,10 @@ public final class CraftingBannerManager {
     private static final int GENERIC_PREV_SLOT = 45;
     private static final int GENERIC_PAGE_SLOT = 49;
     private static final int GENERIC_NEXT_SLOT = 53;
+    private static final int RESULT_LEFT_SLOT = 45;
+    private static final int RESULT_TOP_SLOT = 46;
+    private static final int RESULT_BOTTOM_SLOT = 52;
+    private static final int RESULT_RIGHT_SLOT = 53;
 
     private final DisplayGUIPlugin plugin;
     private final DisplayEntityManager displayEntityManager;
@@ -91,6 +95,8 @@ public final class CraftingBannerManager {
                 data.setTitle(entry.getString("title", "DisplayGUI"));
                 DisplayRenderMode renderMode = DisplayRenderMode.fromId(entry.getString("render-mode", DisplayRenderMode.RECIPE_ONLY.id()));
                 data.setRenderMode(renderMode == null ? DisplayRenderMode.RECIPE_ONLY : renderMode);
+                DisplayResultPosition resultPosition = DisplayResultPosition.fromId(entry.getString("result-position", DisplayResultPosition.RIGHT.id()));
+                data.setResultPosition(resultPosition == null ? DisplayResultPosition.RIGHT : resultPosition);
                 data.setCustomColumns(clampColumns(entry.getInt("custom-columns", 3)));
                 data.setCustomRows(clampRows(entry.getInt("custom-rows", 3)));
                 Object serializedBanner = entry.get("banner-item");
@@ -150,6 +156,7 @@ public final class CraftingBannerManager {
             config.set(path + ".craft-amount", data.craftAmount());
             config.set(path + ".title", data.title());
             config.set(path + ".render-mode", data.renderMode().id());
+            config.set(path + ".result-position", data.resultPosition().id());
             config.set(path + ".banner-item", data.bannerItem());
             config.set(path + ".matrix", data.matrix());
             config.set(path + ".labels", data.slotLabels());
@@ -305,7 +312,7 @@ public final class CraftingBannerManager {
                 adjustAmount(data, rightClick ? 10 : 1);
                 return true;
             }
-            if (slot == 9) {
+            if (slot == craftingResultSlot(data)) {
                 craftConfiguredRecipe(player, data, rightClick);
                 return true;
             }
@@ -374,6 +381,10 @@ public final class CraftingBannerManager {
         inventory.setItem(26, modeItem(Material.CRAFTING_TABLE, "Anzeige Rezept + Ergebnis", data.renderMode() == DisplayRenderMode.RECIPE_AND_RESULT));
         inventory.setItem(35, modeItem(Material.CHEST, "Anzeige Ergebnis", data.renderMode() == DisplayRenderMode.RESULT_ONLY));
         inventory.setItem(44, modeItem(Material.HONEY_BOTTLE, "Anzeige Ergebnis + Menge", data.renderMode() == DisplayRenderMode.RESULT_WITH_AMOUNT));
+        inventory.setItem(RESULT_LEFT_SLOT, positionItem(Material.ARROW, "Ergebnis links", data.resultPosition() == DisplayResultPosition.LEFT));
+        inventory.setItem(RESULT_TOP_SLOT, positionItem(Material.SPECTRAL_ARROW, "Ergebnis oben", data.resultPosition() == DisplayResultPosition.TOP));
+        inventory.setItem(RESULT_BOTTOM_SLOT, positionItem(Material.ARROW, "Ergebnis unten", data.resultPosition() == DisplayResultPosition.BOTTOM));
+        inventory.setItem(RESULT_RIGHT_SLOT, positionItem(Material.SPECTRAL_ARROW, "Ergebnis rechts", data.resultPosition() == DisplayResultPosition.RIGHT));
 
         RecipeMatch match = findRecipeMatch(data);
         if (match != null) {
@@ -496,6 +507,26 @@ public final class CraftingBannerManager {
                 openCraftingMenu(player, data.id());
                 return;
             }
+            if (rawSlot == RESULT_LEFT_SLOT) {
+                setResultPosition(data, DisplayResultPosition.LEFT);
+                openCraftingMenu(player, data.id());
+                return;
+            }
+            if (rawSlot == RESULT_TOP_SLOT) {
+                setResultPosition(data, DisplayResultPosition.TOP);
+                openCraftingMenu(player, data.id());
+                return;
+            }
+            if (rawSlot == RESULT_BOTTOM_SLOT) {
+                setResultPosition(data, DisplayResultPosition.BOTTOM);
+                openCraftingMenu(player, data.id());
+                return;
+            }
+            if (rawSlot == RESULT_RIGHT_SLOT) {
+                setResultPosition(data, DisplayResultPosition.RIGHT);
+                openCraftingMenu(player, data.id());
+                return;
+            }
         }
         if (data.preset() == DisplayPreset.FURNACE_1X5) {
             handleFurnaceMenuClick(player, data, rawSlot, click);
@@ -526,11 +557,12 @@ public final class CraftingBannerManager {
             if (rawSlot != centeredMatrixSlots[i]) {
                 continue;
             }
-            ItemStack cursor = player.getItemOnCursor();
+            ItemStack cursor = cloneCursor(player);
             data.matrix().set(i, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
             save();
             refreshDisplay(data);
             openCraftingMenu(player, data.id());
+            restoreCursor(player, cursor);
             return;
         }
     }
@@ -555,11 +587,12 @@ public final class CraftingBannerManager {
         if (actualSlot >= slotCount) {
             return;
         }
-        ItemStack cursor = player.getItemOnCursor();
+        ItemStack cursor = cloneCursor(player);
         data.matrix().set(actualSlot, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
         save();
         refreshDisplay(data);
         openGenericGridMenu(player, data, page);
+        restoreCursor(player, cursor);
     }
 
     private void handleFurnaceMenuClick(Player player, CraftingBannerData data, int rawSlot, ClickType click) {
@@ -583,13 +616,23 @@ public final class CraftingBannerManager {
             if (rawSlot != FURNACE_SLOTS[i]) {
                 continue;
             }
-            ItemStack cursor = player.getItemOnCursor();
+            ItemStack cursor = cloneCursor(player);
             data.matrix().set(i, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
             save();
             refreshDisplay(data);
             openFurnaceMenu(player, data);
+            restoreCursor(player, cursor);
             return;
         }
+    }
+
+    private ItemStack cloneCursor(Player player) {
+        ItemStack cursor = player.getItemOnCursor();
+        return cursor == null ? null : cursor.clone();
+    }
+
+    private void restoreCursor(Player player, ItemStack cursor) {
+        player.setItemOnCursor(cursor == null ? null : cursor.clone());
     }
 
     public void onInventoryClosed(Player player) {
@@ -909,6 +952,10 @@ public final class CraftingBannerManager {
         return item;
     }
 
+    private ItemStack positionItem(Material material, String name, boolean enabled) {
+        return modeItem(material, name, enabled);
+    }
+
     private CraftingBannerData getBannerData(Block block) {
         UUID bannerId = getBannerId(block);
         return bannerId == null ? null : banners.get(bannerId);
@@ -984,8 +1031,23 @@ public final class CraftingBannerManager {
         return "DisplayGUI " + presetName(data);
     }
 
+    private int craftingResultSlot(CraftingBannerData data) {
+        return switch (data.resultPosition()) {
+            case LEFT -> 5;
+            case TOP -> 1;
+            case BOTTOM -> 13;
+            case RIGHT -> 9;
+        };
+    }
+
     private void setRenderMode(CraftingBannerData data, DisplayRenderMode mode) {
         data.setRenderMode(mode);
+        save();
+        refreshDisplay(data);
+    }
+
+    private void setResultPosition(CraftingBannerData data, DisplayResultPosition position) {
+        data.setResultPosition(position == null ? DisplayResultPosition.RIGHT : position);
         save();
         refreshDisplay(data);
     }

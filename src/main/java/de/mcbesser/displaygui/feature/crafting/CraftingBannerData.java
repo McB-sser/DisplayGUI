@@ -20,6 +20,7 @@ public final class CraftingBannerData {
     private String title;
     private ItemStack bannerItem;
     private DisplayRenderMode renderMode;
+    private DisplayResultPosition resultPosition;
     private final List<String> matrix = new ArrayList<>();
     private final List<String> slotLabels = new ArrayList<>();
     private final List<String> slotActions = new ArrayList<>();
@@ -33,6 +34,7 @@ public final class CraftingBannerData {
         this.title = "DisplayGUI";
         this.bannerItem = null;
         this.renderMode = DisplayRenderMode.RECIPE_ONLY;
+        this.resultPosition = DisplayResultPosition.RIGHT;
         for (int i = 0; i < 54; i++) {
             matrix.add("");
             slotLabels.add("");
@@ -138,6 +140,14 @@ public final class CraftingBannerData {
 
     public void setRenderMode(DisplayRenderMode renderMode) {
         this.renderMode = renderMode;
+    }
+
+    public DisplayResultPosition resultPosition() {
+        return resultPosition;
+    }
+
+    public void setResultPosition(DisplayResultPosition resultPosition) {
+        this.resultPosition = resultPosition;
     }
 
     public List<String> matrix() {

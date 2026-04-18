@@ -46,7 +46,10 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                 return new DisplayLayout("crafting-result-amount", 3, 1, 0.0, 0.55, 0.50, 1.05, 0.50f, 0.28f, 0.50f);
             }
             if (showsResult()) {
-                return new DisplayLayout("crafting-3x3-result", 5, 3, 0.0, 1.55, 0.50, 2.05, 0.50f, 0.28f, 0.50f);
+                return switch (data.resultPosition()) {
+                    case LEFT, RIGHT -> new DisplayLayout("crafting-3x3-result-" + data.resultPosition().id(), 5, 3, 0.0, 1.55, 0.50, 2.05, 0.50f, 0.28f, 0.50f);
+                    case TOP, BOTTOM -> new DisplayLayout("crafting-3x3-result-" + data.resultPosition().id(), 3, 5, 0.0, 2.55, 0.50, 3.05, 0.50f, 0.28f, 0.50f);
+                };
             }
             return new DisplayLayout("crafting-3x3-only", 3, 3, 0.0, 1.55, 0.50, 2.05, 0.50f, 0.28f, 0.50f);
         }
@@ -96,18 +99,16 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                         )
                 ));
             } else {
-            int[] recipeSlots = showsResult()
-                    ? new int[]{0, 1, 2, 5, 6, 7, 10, 11, 12}
-                    : new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
-            if (showsRecipe()) {
-                for (int slot = 0; slot < recipeSlots.length; slot++) {
-                    int displaySlot = recipeSlots[slot];
-                    slots.add(slot(displaySlot, data.matrix().get(slot), defaultLabel(slot, "Slot " + (slot + 1))));
+                int[] recipeSlots = showsResult() ? recipeSlotsWithResult() : new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
+                if (showsRecipe()) {
+                    for (int slot = 0; slot < recipeSlots.length; slot++) {
+                        int displaySlot = recipeSlots[slot];
+                        slots.add(slot(displaySlot, data.matrix().get(slot), defaultLabel(slot, "Slot " + (slot + 1))));
+                    }
                 }
-            }
-            if (showsResult() && recipeMatch != null) {
-                addCenteredResult(slots, 9);
-            }
+                if (showsResult() && recipeMatch != null) {
+                    addCenteredResult(slots, resultDisplaySlot());
+                }
             }
         } else if (data.preset() == DisplayPreset.FURNACE_1X5) {
             slots.add(slot(0, data.matrix().get(0), defaultLabel(0, "Input")));
@@ -194,6 +195,24 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                 0.50f,
                 0.50f
         ));
+    }
+
+    private int[] recipeSlotsWithResult() {
+        return switch (data.resultPosition()) {
+            case RIGHT -> new int[]{0, 1, 2, 5, 6, 7, 10, 11, 12};
+            case LEFT -> new int[]{2, 3, 4, 7, 8, 9, 12, 13, 14};
+            case TOP -> new int[]{6, 7, 8, 9, 10, 11, 12, 13, 14};
+            case BOTTOM -> new int[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
+        };
+    }
+
+    private int resultDisplaySlot() {
+        return switch (data.resultPosition()) {
+            case RIGHT -> 9;
+            case LEFT -> 5;
+            case TOP -> 1;
+            case BOTTOM -> 13;
+        };
     }
 
     private ItemStack resultAmountIcon() {

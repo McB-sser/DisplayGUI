@@ -346,7 +346,7 @@ public final class DisplayEntityManager {
         DisplayAnchor anchor = renderable.anchor();
         DisplayLayout layout = renderable.layout();
         List<BlockDisplay> stands = new ArrayList<>(2);
-        float poleHeight = layout.rows() <= 1 ? 1.0625f : 2.0625f;
+        float poleHeight = 1.0625f + Math.max(0, layout.rows() - 1) * 0.5f;
 
         Location poleLocation = transform(anchor.location(), 0.0, 1.02, -0.04, anchor.yaw());
         BlockDisplay pole = anchor.location().getWorld().spawn(poleLocation, BlockDisplay.class, entity -> {
