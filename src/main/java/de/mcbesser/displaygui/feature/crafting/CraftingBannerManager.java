@@ -14,21 +14,27 @@ import org.bukkit.World;
 import org.bukkit.block.Banner;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Furnace;
+import org.bukkit.block.TileState;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.ClickType;
+import org.bukkit.inventory.CookingRecipe;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.FurnaceInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -42,7 +48,6 @@ public final class CraftingBannerManager {
     private static final int DECREASE_SLOT = 41;
     private static final int INFO_SLOT = 42;
     private static final int INCREASE_SLOT = 43;
-    private static final int[] FURNACE_SLOTS = {1, 3, 5, 7, 8};
     private static final int GENERIC_PREV_SLOT = 45;
     private static final int GENERIC_PAGE_SLOT = 49;
     private static final int GENERIC_NEXT_SLOT = 53;
@@ -50,6 +55,7 @@ public final class CraftingBannerManager {
     private static final int RESULT_TOP_SLOT = 46;
     private static final int RESULT_BOTTOM_SLOT = 52;
     private static final int RESULT_RIGHT_SLOT = 53;
+    private static final int TITLE_EDIT_SLOT = 4;
 
     private final DisplayGUIPlugin plugin;
     private final DisplayEntityManager displayEntityManager;
@@ -318,12 +324,8 @@ public final class CraftingBannerManager {
             }
         }
         if (data.preset() == DisplayPreset.FURNACE_1X5) {
-            if (slot == 3) {
-                craftConfiguredRecipe(player, data, rightClick);
-                return true;
-            }
-            if (slot == 4) {
-                adjustAmount(data, rightClick ? 8 : 1);
+            if (handleFurnaceDisplayInteraction(player, data, slot, rightClick)) {
+                refreshDisplay(data);
                 return true;
             }
         }
@@ -357,6 +359,23 @@ public final class CraftingBannerManager {
         CraftingMenuHolder holder = new CraftingMenuHolder(data.id(), 0);
         Inventory inventory = Bukkit.createInventory(holder, 54, Component.text(data.title()));
         holder.setInventory(inventory);
+        populateCrafting3x3Inventory(inventory, data);
+        player.openInventory(inventory);
+    }
+
+    private void openGenericGridMenu(Player player, CraftingBannerData data, int page) {
+        int displaySlots = getDisplaySlotCount(data);
+        int editablePerPage = 45;
+        int maxPage = Math.max(0, (displaySlots - 1) / editablePerPage);
+        int currentPage = Math.max(0, Math.min(page, maxPage));
+        CraftingMenuHolder holder = new CraftingMenuHolder(data.id(), currentPage);
+        Inventory inventory = Bukkit.createInventory(holder, 54, Component.text(data.title()));
+        holder.setInventory(inventory);
+        populateGenericGridInventory(inventory, data, currentPage);
+        player.openInventory(inventory);
+    }
+
+    private void populateCrafting3x3Inventory(Inventory inventory, CraftingBannerData data) {
         ItemStack filler = named(Material.GRAY_STAINED_GLASS_PANE, " ");
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             inventory.setItem(slot, filler);
@@ -396,18 +415,12 @@ public final class CraftingBannerManager {
             }
             inventory.setItem(25, result);
         }
-
-        player.openInventory(inventory);
     }
 
-    private void openGenericGridMenu(Player player, CraftingBannerData data, int page) {
+    private void populateGenericGridInventory(Inventory inventory, CraftingBannerData data, int currentPage) {
         int displaySlots = getDisplaySlotCount(data);
         int editablePerPage = 45;
         int maxPage = Math.max(0, (displaySlots - 1) / editablePerPage);
-        int currentPage = Math.max(0, Math.min(page, maxPage));
-        CraftingMenuHolder holder = new CraftingMenuHolder(data.id(), currentPage);
-        Inventory inventory = Bukkit.createInventory(holder, 54, Component.text(data.title()));
-        holder.setInventory(inventory);
         ItemStack filler = named(Material.GRAY_STAINED_GLASS_PANE, " ");
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             inventory.setItem(slot, filler);
@@ -421,45 +434,22 @@ public final class CraftingBannerManager {
         inventory.setItem(GENERIC_PREV_SLOT, named(Material.ARROW, "Seite zur\u00fcck"));
         inventory.setItem(GENERIC_PAGE_SLOT, named(Material.BOOK, "Seite " + (currentPage + 1) + "/" + (maxPage + 1)));
         inventory.setItem(GENERIC_NEXT_SLOT, named(Material.ARROW, "Seite vor"));
-
-        player.openInventory(inventory);
     }
 
     private void openFurnaceMenu(Player player, CraftingBannerData data) {
         CraftingMenuHolder holder = new CraftingMenuHolder(data.id(), 0);
-        Inventory inventory = Bukkit.createInventory(holder, 18, Component.text("DisplayGUI 1x5"));
+        Inventory inventory = Bukkit.createInventory(holder, 9, Component.text(data.title()));
         holder.setInventory(inventory);
+        populateFurnaceInventory(inventory, data);
+        player.openInventory(inventory);
+    }
+
+    private void populateFurnaceInventory(Inventory inventory, CraftingBannerData data) {
         ItemStack filler = named(Material.GRAY_STAINED_GLASS_PANE, " ");
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             inventory.setItem(slot, filler);
         }
-
-        for (int i = 0; i < FURNACE_SLOTS.length; i++) {
-            inventory.setItem(FURNACE_SLOTS[i], itemFromName(data.matrix().get(i)));
-        }
-
-        inventory.setItem(DECREASE_SLOT - 27, named(Material.RED_STAINED_GLASS_PANE, "Menge verringern", List.of(
-                Component.text("Linksklick: -1", NamedTextColor.WHITE),
-                Component.text("Rechtsklick: -10", NamedTextColor.WHITE)
-        )));
-        inventory.setItem(INFO_SLOT - 27, named(Material.SLIME_BALL, "Menge: " + data.craftAmount()));
-        inventory.setItem(INCREASE_SLOT - 27, named(Material.LIME_STAINED_GLASS_PANE, "Menge erh\u00f6hen", List.of(
-                Component.text("Linksklick: +1", NamedTextColor.WHITE),
-                Component.text("Rechtsklick: +10", NamedTextColor.WHITE)
-        )));
-
-        RecipeMatch match = findRecipeMatch(data);
-        if (match != null) {
-            ItemStack result = match.result().clone();
-            ItemMeta meta = result.getItemMeta();
-            if (meta != null) {
-                meta.displayName(Component.text("Ergebnis", NamedTextColor.GREEN));
-                result.setItemMeta(meta);
-            }
-            inventory.setItem(6, result);
-        }
-
-        player.openInventory(inventory);
+        inventory.setItem(TITLE_EDIT_SLOT, named(Material.WRITABLE_BOOK, "Titel bearbeiten"));
     }
 
     public void handleMenuClick(Player player, Inventory inventory, int rawSlot, ClickType click) {
@@ -472,7 +462,7 @@ public final class CraftingBannerManager {
             return;
         }
 
-        if (data.preset() == DisplayPreset.CRAFTING_3X3 && rawSlot == 4) {
+        if ((data.preset() == DisplayPreset.CRAFTING_3X3 || data.preset() == DisplayPreset.FURNACE_1X5) && rawSlot == TITLE_EDIT_SLOT) {
             if (titlePromptListener != null) {
                 titlePromptListener.requestTitle(player, data.id());
             }
@@ -529,7 +519,7 @@ public final class CraftingBannerManager {
             }
         }
         if (data.preset() == DisplayPreset.FURNACE_1X5) {
-            handleFurnaceMenuClick(player, data, rawSlot, click);
+            handleFurnaceMenuClick(player, data, rawSlot);
             return;
         }
 
@@ -557,12 +547,11 @@ public final class CraftingBannerManager {
             if (rawSlot != centeredMatrixSlots[i]) {
                 continue;
             }
-            ItemStack cursor = cloneCursor(player);
+            ItemStack cursor = player.getItemOnCursor();
             data.matrix().set(i, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
             save();
             refreshDisplay(data);
-            openCraftingMenu(player, data.id());
-            restoreCursor(player, cursor);
+            populateCrafting3x3Inventory(inventory, data);
             return;
         }
     }
@@ -587,52 +576,17 @@ public final class CraftingBannerManager {
         if (actualSlot >= slotCount) {
             return;
         }
-        ItemStack cursor = cloneCursor(player);
+        ItemStack cursor = player.getItemOnCursor();
         data.matrix().set(actualSlot, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
         save();
         refreshDisplay(data);
-        openGenericGridMenu(player, data, page);
-        restoreCursor(player, cursor);
+        populateGenericGridInventory(player.getOpenInventory().getTopInventory(), data, page);
     }
 
-    private void handleFurnaceMenuClick(Player player, CraftingBannerData data, int rawSlot, ClickType click) {
-        if (rawSlot == 14) {
-            adjustAmount(data, click.isRightClick() ? -10 : -1);
-            openFurnaceMenu(player, data);
-            return;
+    private void handleFurnaceMenuClick(Player player, CraftingBannerData data, int rawSlot) {
+        if (rawSlot == TITLE_EDIT_SLOT && titlePromptListener != null) {
+            titlePromptListener.requestTitle(player, data.id());
         }
-        if (rawSlot == 16) {
-            adjustAmount(data, click.isRightClick() ? 10 : 1);
-            openFurnaceMenu(player, data);
-            return;
-        }
-        if (rawSlot == 6) {
-            craftConfiguredRecipe(player, data, click.isRightClick());
-            openFurnaceMenu(player, data);
-            return;
-        }
-
-        for (int i = 0; i < FURNACE_SLOTS.length; i++) {
-            if (rawSlot != FURNACE_SLOTS[i]) {
-                continue;
-            }
-            ItemStack cursor = cloneCursor(player);
-            data.matrix().set(i, cursor == null || cursor.getType() == Material.AIR ? "" : cursor.getType().name());
-            save();
-            refreshDisplay(data);
-            openFurnaceMenu(player, data);
-            restoreCursor(player, cursor);
-            return;
-        }
-    }
-
-    private ItemStack cloneCursor(Player player) {
-        ItemStack cursor = player.getItemOnCursor();
-        return cursor == null ? null : cursor.clone();
-    }
-
-    private void restoreCursor(Player player, ItemStack cursor) {
-        player.setItemOnCursor(cursor == null ? null : cursor.clone());
     }
 
     public void onInventoryClosed(Player player) {
@@ -839,23 +793,138 @@ public final class CraftingBannerManager {
             return;
         }
         RecipeMatch match = findRecipeMatch(data);
+        if (data.preset() == DisplayPreset.FURNACE_1X5) {
+            displayEntityManager.register(new CraftingBannerDisplay(
+                    data,
+                    new DisplayAnchor(block.getLocation(), data.yaw()),
+                    match,
+                    captureFurnaceSnapshot(data)
+            ));
+            return;
+        }
         displayEntityManager.register(new CraftingBannerDisplay(data, new DisplayAnchor(block.getLocation(), data.yaw()), match));
     }
 
     private RecipeMatch findRecipeMatch(CraftingBannerData data) {
         ItemStack[] matrix = new ItemStack[9];
+        if (data.preset() == DisplayPreset.FURNACE_1X5) {
+            Furnace furnace = resolveFurnace(data);
+            FurnaceInventory inventory = furnace == null ? null : furnace.getInventory();
+            ItemStack input = inventory == null ? null : inventory.getSmelting();
+            return recipeMatcher.adaptCookingRecipe(input, data.preset(), resolveCookerType(data));
+        }
         for (int i = 0; i < 9; i++) {
             matrix[i] = itemFromName(data.matrix().get(i));
         }
-        if (data.preset() == DisplayPreset.FURNACE_1X5) {
-            return recipeMatcher.adaptCookingRecipe(matrix[0], data.preset());
-        }
         return recipeMatcher.findMatchingCraftingRecipe(matrix);
+    }
+
+    private CraftingBannerDisplay.FurnaceSnapshot captureFurnaceSnapshot(CraftingBannerData data) {
+        Furnace furnace = resolveFurnace(data);
+        if (furnace == null) {
+            return new CraftingBannerDisplay.FurnaceSnapshot(null, null, null, 0, 0.0f, 0, false);
+        }
+        FurnaceInventory inventory = furnace.getInventory();
+        int totalCookTime = Math.max(1, furnace.getCookTimeTotal());
+        int progressPercent = Math.max(0, Math.min(100, Math.round((furnace.getCookTime() * 100.0f) / totalCookTime)));
+        float experienceAmount = captureStoredFurnaceExperience(furnace, inventory.getSmelting(), inventory.getResult(), furnace.getBlock().getType());
+        int fuelCapacity = captureFuelCapacity(furnace, inventory.getFuel());
+        return new CraftingBannerDisplay.FurnaceSnapshot(
+                cloneOrNull(inventory.getSmelting()),
+                cloneOrNull(inventory.getFuel()),
+                cloneOrNull(inventory.getResult()),
+                progressPercent,
+                experienceAmount,
+                fuelCapacity,
+                furnace.getBurnTime() > 0
+        );
+    }
+
+    private float captureStoredFurnaceExperience(Furnace furnace, ItemStack input, ItemStack result, Material cookerType) {
+        float storedExperience = reflectStoredFurnaceExperience(furnace);
+        if (storedExperience > 0.0f) {
+            return storedExperience;
+        }
+        return captureResultExperienceEstimate(input, result, cookerType);
+    }
+
+    private float captureResultExperienceEstimate(ItemStack input, ItemStack result, Material cookerType) {
+        if (input == null || input.getType() == Material.AIR || result == null || result.getType() == Material.AIR) {
+            return 0.0f;
+        }
+        Recipe recipe = recipeMatcher.adaptCookingRecipe(input, DisplayPreset.FURNACE_1X5, cookerType) == null
+                ? null
+                : recipeMatcher.adaptCookingRecipe(input, DisplayPreset.FURNACE_1X5, cookerType).recipe();
+        if (!(recipe instanceof CookingRecipe<?> cookingRecipe)) {
+            return 0.0f;
+        }
+        return cookingRecipe.getExperience() * result.getAmount();
+    }
+
+    private float reflectStoredFurnaceExperience(Furnace furnace) {
+        try {
+            Method method = furnace.getClass().getMethod("getRecipesUsed");
+            Object value = method.invoke(furnace);
+            if (!(value instanceof Map<?, ?> recipesUsed)) {
+                return 0.0f;
+            }
+            float total = 0.0f;
+            for (Map.Entry<?, ?> entry : recipesUsed.entrySet()) {
+                if (!(entry.getKey() instanceof CookingRecipe<?> recipe) || !(entry.getValue() instanceof Number count)) {
+                    continue;
+                }
+                total += recipe.getExperience() * count.intValue();
+            }
+            return total;
+        } catch (ReflectiveOperationException ignored) {
+            return 0.0f;
+        }
+    }
+
+    private int captureFuelCapacity(Furnace furnace, ItemStack fuelStack) {
+        RecipeMatch currentRecipe = recipeMatcher.adaptCookingRecipe(furnace.getInventory().getSmelting(), DisplayPreset.FURNACE_1X5, furnace.getBlock().getType());
+        Recipe recipe = currentRecipe == null ? null : currentRecipe.recipe();
+        int cookTimeTotal = recipe instanceof CookingRecipe<?> cookingRecipe ? Math.max(1, cookingRecipe.getCookingTime()) : Math.max(1, furnace.getCookTimeTotal());
+        int burnTicks = Math.max(0, furnace.getBurnTime());
+        burnTicks += fuelBurnTicks(fuelStack);
+        return burnTicks / cookTimeTotal;
+    }
+
+    private int fuelBurnTicks(ItemStack stack) {
+        if (stack == null || stack.getType() == Material.AIR) {
+            return 0;
+        }
+        int singleFuelTicks = reflectMaterialBurnTime(stack.getType());
+        return Math.max(0, singleFuelTicks) * stack.getAmount();
+    }
+
+    private int reflectMaterialBurnTime(Material material) {
+        try {
+            Method method = material.getClass().getMethod("getBurnTime");
+            Object value = method.invoke(material);
+            return value instanceof Number number ? number.intValue() : 0;
+        } catch (ReflectiveOperationException ignored) {
+            return 0;
+        }
     }
 
     private Block resolveBlock(CraftingBannerData data) {
         World world = Bukkit.getWorld(data.world());
         return world == null ? null : world.getBlockAt(data.x(), data.y(), data.z());
+    }
+
+    private Furnace resolveFurnace(CraftingBannerData data) {
+        Block anchorBlock = resolveBlock(data);
+        if (anchorBlock == null) {
+            return null;
+        }
+        BlockState state = anchorBlock.getRelative(0, -1, 0).getState();
+        return state instanceof Furnace furnace ? furnace : null;
+    }
+
+    private Material resolveCookerType(CraftingBannerData data) {
+        Furnace furnace = resolveFurnace(data);
+        return furnace == null ? Material.FURNACE : furnace.getBlock().getType();
     }
 
     private UUID getOrCreateBannerId(Block block) {
@@ -911,14 +980,6 @@ public final class CraftingBannerManager {
             data.slotActions().set(i, DisplaySlotAction.NONE.id());
         }
 
-        if (data.preset() == DisplayPreset.FURNACE_1X5) {
-            if (data.matrix().get(1).isBlank()) {
-                data.matrix().set(1, Material.COAL.name());
-            }
-            if (data.matrix().get(2).isBlank()) {
-                data.matrix().set(2, Material.BLAZE_POWDER.name());
-            }
-        }
         if (data.preset() == DisplayPreset.CUSTOM && (data.title() == null || data.title().isBlank() || data.title().equals("DisplayGUI"))) {
             data.setTitle(defaultTitle(data));
         }
@@ -1028,7 +1089,166 @@ public final class CraftingBannerManager {
     }
 
     private String defaultTitle(CraftingBannerData data) {
+        if (data.preset() == DisplayPreset.FURNACE_1X5) {
+            return "Ofen";
+        }
         return "DisplayGUI " + presetName(data);
+    }
+
+    private ItemStack cloneOrNull(ItemStack stack) {
+        return stack == null ? null : stack.clone();
+    }
+
+    private boolean handleFurnaceDisplayInteraction(Player player, CraftingBannerData data, int slot, boolean rightClick) {
+        Furnace furnace = resolveFurnace(data);
+        if (furnace == null) {
+            return false;
+        }
+        FurnaceInventory inventory = furnace.getInventory();
+        if (slot == 0) {
+            return insertIntoFurnaceSlot(player, inventory, true, rightClick);
+        }
+        if (slot == 4) {
+            return insertIntoFurnaceSlot(player, inventory, false, rightClick);
+        }
+        if (slot == 3) {
+            return takeFurnaceResult(player, inventory, rightClick);
+        }
+        if (slot == 5) {
+            return collectStoredFurnaceExperience(player, furnace);
+        }
+        return false;
+    }
+
+    private boolean insertIntoFurnaceSlot(Player player, FurnaceInventory inventory, boolean inputSlot, boolean fullStack) {
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType() == Material.AIR) {
+            return false;
+        }
+        if (inputSlot) {
+            if (recipeMatcher.adaptCookingRecipe(hand, DisplayPreset.FURNACE_1X5, inventory.getHolder() instanceof Furnace furnace ? furnace.getBlock().getType() : Material.FURNACE) == null) {
+                return false;
+            }
+        } else if (!hand.getType().isFuel()) {
+            return false;
+        }
+
+        ItemStack target = inputSlot ? inventory.getSmelting() : inventory.getFuel();
+        if (target != null && target.getType() != Material.AIR && target.getType() != hand.getType()) {
+            return false;
+        }
+
+        int transferAmount = fullStack ? hand.getAmount() : 1;
+        int currentAmount = target == null || target.getType() == Material.AIR ? 0 : target.getAmount();
+        int maxStack = hand.getMaxStackSize();
+        int accepted = Math.max(0, Math.min(transferAmount, maxStack - currentAmount));
+        if (accepted <= 0) {
+            return false;
+        }
+
+        ItemStack updated = hand.clone();
+        updated.setAmount(currentAmount + accepted);
+        if (inputSlot) {
+            inventory.setSmelting(updated);
+        } else {
+            inventory.setFuel(updated);
+        }
+
+        hand.setAmount(hand.getAmount() - accepted);
+        if (hand.getAmount() <= 0) {
+            player.getInventory().setItemInMainHand(null);
+        } else {
+            player.getInventory().setItemInMainHand(hand);
+        }
+        return true;
+    }
+
+    private boolean takeFurnaceResult(Player player, FurnaceInventory inventory, boolean fullStack) {
+        ItemStack result = inventory.getResult();
+        if (result == null || result.getType() == Material.AIR) {
+            return false;
+        }
+        ItemStack taken = result.clone();
+        if (!fullStack) {
+            taken.setAmount(1);
+        }
+        Map<Integer, ItemStack> overflow = player.getInventory().addItem(taken);
+        int inserted = taken.getAmount() - overflow.values().stream().mapToInt(ItemStack::getAmount).sum();
+        if (inserted <= 0) {
+            return false;
+        }
+        result.setAmount(result.getAmount() - inserted);
+        inventory.setResult(result.getAmount() <= 0 ? null : result);
+        return true;
+    }
+
+    private boolean collectStoredFurnaceExperience(Player player, Furnace furnace) {
+        int experience = computeStoredFurnaceExperienceToAward(furnace);
+        if (experience <= 0) {
+            return false;
+        }
+        player.giveExp(experience);
+        clearStoredFurnaceExperience(furnace);
+        return true;
+    }
+
+    private int computeStoredFurnaceExperienceToAward(Furnace furnace) {
+        try {
+            Method method = furnace.getClass().getMethod("getRecipesUsed");
+            Object value = method.invoke(furnace);
+            if (!(value instanceof Map<?, ?> recipesUsed) || recipesUsed.isEmpty()) {
+                return 0;
+            }
+            int total = 0;
+            for (Map.Entry<?, ?> entry : recipesUsed.entrySet()) {
+                if (!(entry.getKey() instanceof CookingRecipe<?> recipe) || !(entry.getValue() instanceof Number count)) {
+                    continue;
+                }
+                total += calculateAwardedExperience(recipe.getExperience(), count.intValue());
+            }
+            return total;
+        } catch (ReflectiveOperationException ignored) {
+            return 0;
+        }
+    }
+
+    private int calculateAwardedExperience(float experiencePerRecipe, int recipeCount) {
+        if (experiencePerRecipe <= 0.0f || recipeCount <= 0) {
+            return 0;
+        }
+        float total = experiencePerRecipe * recipeCount;
+        int floor = (int) Math.floor(total);
+        float fraction = total - floor;
+        if (fraction > 0.0f && Math.random() < fraction) {
+            floor++;
+        }
+        return floor;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void clearStoredFurnaceExperience(Furnace furnace) {
+        try {
+            try {
+                Method setter = furnace.getClass().getMethod("setRecipesUsed", Map.class);
+                setter.invoke(furnace, new HashMap<>());
+            } catch (NoSuchMethodException ignored) {
+                Method method = furnace.getClass().getMethod("getRecipesUsed");
+                Object value = method.invoke(furnace);
+                if (value instanceof Map recipesUsed) {
+                    try {
+                        recipesUsed.clear();
+                    } catch (UnsupportedOperationException ignoredToo) {
+                        return;
+                    }
+                }
+            }
+            if (furnace instanceof TileState tileState) {
+                tileState.update();
+            } else {
+                furnace.update();
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
     private int craftingResultSlot(CraftingBannerData data) {

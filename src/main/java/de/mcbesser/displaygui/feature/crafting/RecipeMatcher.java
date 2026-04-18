@@ -2,12 +2,15 @@ package de.mcbesser.displaygui.feature.crafting;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.inventory.BlastingRecipe;
 import org.bukkit.inventory.CookingRecipe;
+import org.bukkit.inventory.FurnaceRecipe;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
+import org.bukkit.inventory.SmokingRecipe;
 import org.bukkit.inventory.StonecuttingRecipe;
 
 import java.util.ArrayList;
@@ -30,6 +33,10 @@ public final class RecipeMatcher {
     }
 
     public RecipeMatch adaptCookingRecipe(ItemStack ingredient, DisplayPreset preset) {
+        return adaptCookingRecipe(ingredient, preset, Material.FURNACE);
+    }
+
+    public RecipeMatch adaptCookingRecipe(ItemStack ingredient, DisplayPreset preset, Material cookerType) {
         if (ingredient == null || ingredient.getType() == Material.AIR || preset != DisplayPreset.FURNACE_1X5) {
             return null;
         }
@@ -37,7 +44,9 @@ public final class RecipeMatcher {
         Iterator<Recipe> iterator = Bukkit.recipeIterator();
         while (iterator.hasNext()) {
             Recipe recipe = iterator.next();
-            if (recipe instanceof CookingRecipe<?> cookingRecipe && matchesChoice(cookingRecipe.getInputChoice(), ingredient)) {
+            if (recipe instanceof CookingRecipe<?> cookingRecipe
+                    && matchesCookingRecipe(cookingRecipe, cookerType)
+                    && matchesChoice(cookingRecipe.getInputChoice(), ingredient)) {
                 return new RecipeMatch(recipe, cookingRecipe.getResult().clone(), Map.of(0, single(ingredient)));
             }
             if (recipe instanceof StonecuttingRecipe stonecuttingRecipe && matchesChoice(stonecuttingRecipe.getInputChoice(), ingredient)) {
@@ -124,6 +133,16 @@ public final class RecipeMatcher {
         }
 
         return new RecipeMatch(recipe, recipe.getResult().clone(), normalized);
+    }
+
+    private boolean matchesCookingRecipe(CookingRecipe<?> recipe, Material cookerType) {
+        if (cookerType == Material.SMOKER) {
+            return recipe instanceof SmokingRecipe;
+        }
+        if (cookerType == Material.BLAST_FURNACE) {
+            return recipe instanceof BlastingRecipe;
+        }
+        return recipe instanceof FurnaceRecipe;
     }
 
     private RecipeMatch matchShapeless(ShapelessRecipe recipe, ItemStack[] matrix) {

@@ -13,17 +13,24 @@ import org.bukkit.inventory.meta.ItemMeta;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 public final class CraftingBannerDisplay implements DisplayRenderable {
     private final CraftingBannerData data;
     private final DisplayAnchor anchor;
     private final RecipeMatch recipeMatch;
+    private final FurnaceSnapshot furnaceSnapshot;
 
     public CraftingBannerDisplay(CraftingBannerData data, DisplayAnchor anchor, RecipeMatch recipeMatch) {
+        this(data, anchor, recipeMatch, null);
+    }
+
+    public CraftingBannerDisplay(CraftingBannerData data, DisplayAnchor anchor, RecipeMatch recipeMatch, FurnaceSnapshot furnaceSnapshot) {
         this.data = data;
         this.anchor = anchor;
         this.recipeMatch = recipeMatch;
+        this.furnaceSnapshot = furnaceSnapshot;
     }
 
     @Override
@@ -111,28 +118,65 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
                 }
             }
         } else if (data.preset() == DisplayPreset.FURNACE_1X5) {
-            slots.add(slot(0, data.matrix().get(0), defaultLabel(0, "Input")));
-            slots.add(buttonSlot(1, Material.COAL, "Fuel", defaultLabel(1, "Brennstoff-Anzeige"), Collections.emptyList()));
-            slots.add(buttonSlot(2, Material.BLAZE_POWDER, "->", defaultLabel(2, "Verarbeitung"), Collections.emptyList()));
+            slots.add(new DisplayContent.DisplaySlot(
+                    0,
+                    new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
+                    snapshotItem(furnaceSnapshot == null ? null : furnaceSnapshot.input(), Material.GRAY_STAINED_GLASS_PANE),
+                    amountText(furnaceSnapshot == null ? null : furnaceSnapshot.input()),
+                    Component.text(defaultLabel(0, "Brennmaterial"), NamedTextColor.YELLOW),
+                    0.24f,
+                    0.40f,
+                    0.40f
+            ));
+            slots.add(new DisplayContent.DisplaySlot(
+                    1,
+                    new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
+                    new ItemStack(Material.CLOCK),
+                    capacityText(),
+                    Component.text(defaultLabel(1, "Brenndauer"), NamedTextColor.YELLOW),
+                    0.24f,
+                    0.40f,
+                    0.40f
+            ));
+            slots.add(new DisplayContent.DisplaySlot(
+                    2,
+                    new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
+                    new ItemStack(furnaceSnapshot != null && furnaceSnapshot.isBurning() ? Material.BLAZE_POWDER : Material.FIRE_CHARGE),
+                    progressText(),
+                    Component.text(defaultLabel(2, "Flamme"), NamedTextColor.YELLOW),
+                    0.24f,
+                    0.40f,
+                    0.40f
+            ));
+            slots.add(new DisplayContent.DisplaySlot(
+                    4,
+                    new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
+                    snapshotItem(furnaceSnapshot == null ? null : furnaceSnapshot.fuel(), Material.BUCKET),
+                    amountText(furnaceSnapshot == null ? null : furnaceSnapshot.fuel()),
+                    Component.text(defaultLabel(4, "Brennstoff"), NamedTextColor.YELLOW),
+                    0.24f,
+                    0.40f,
+                    0.40f
+            ));
             slots.add(new DisplayContent.DisplaySlot(
                     3,
                     new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
-                    recipeMatch != null ? recipeMatch.result().clone() : new ItemStack(Material.GRAY_STAINED_GLASS_PANE),
-                    recipeMatch != null ? resultAmountText() : Component.text("Kein Rezept", NamedTextColor.RED),
+                    snapshotItem(furnaceSnapshot == null ? null : furnaceSnapshot.result(), Material.GRAY_STAINED_GLASS_PANE),
+                    amountText(furnaceSnapshot == null ? null : furnaceSnapshot.result()),
                     Component.text(defaultLabel(3, "Ofen-Ergebnis"), NamedTextColor.YELLOW),
                     0.24f,
                     0.40f,
                     0.40f
             ));
-            slots.add(buttonSlot(
-                    4,
-                    Material.SLIME_BALL,
-                    "x" + data.craftAmount(),
-                    defaultLabel(4, "Menge"),
-                    List.of(
-                            Component.text("Anzeige: Menge", NamedTextColor.YELLOW),
-                            Component.text("Wert: " + data.craftAmount(), NamedTextColor.WHITE)
-                    )
+            slots.add(new DisplayContent.DisplaySlot(
+                    5,
+                    new ItemStack(Material.BLACK_STAINED_GLASS_PANE),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE),
+                    experienceText(),
+                    Component.text(defaultLabel(5, "Erfahrung"), NamedTextColor.YELLOW),
+                    0.24f,
+                    0.40f,
+                    0.40f
             ));
         } else {
             int count = Math.min(layout().slotCount(), data.matrix().size());
@@ -141,7 +185,9 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
             }
         }
 
-        String title = data.title() == null || data.title().isBlank() ? "DisplayGUI " + data.preset().id() : data.title();
+        String title = data.title() == null || data.title().isBlank()
+                ? (data.preset() == DisplayPreset.FURNACE_1X5 ? "Ofen" : "DisplayGUI " + data.preset().id())
+                : data.title();
         return new DisplayContent(Component.text(title, NamedTextColor.GOLD), slots);
     }
 
@@ -234,6 +280,42 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
         return Component.text("x" + data.craftAmount(), NamedTextColor.WHITE);
     }
 
+    private Component amountText(ItemStack stack) {
+        if (stack == null || stack.getType() == Material.AIR) {
+            return Component.empty();
+        }
+        return Component.text("x" + stack.getAmount(), NamedTextColor.WHITE);
+    }
+
+    private ItemStack snapshotItem(ItemStack stack, Material fallback) {
+        return stack == null || stack.getType() == Material.AIR ? new ItemStack(fallback) : stack.clone();
+    }
+
+    private Component progressText() {
+        if (furnaceSnapshot == null) {
+            return Component.text("0%", NamedTextColor.WHITE);
+        }
+        return Component.text(furnaceSnapshot.progressPercent() + "%", NamedTextColor.WHITE);
+    }
+
+    private Component experienceText() {
+        if (furnaceSnapshot == null || furnaceSnapshot.experienceAmount() <= 0.0f) {
+            return Component.text("x0", NamedTextColor.WHITE);
+        }
+        float rounded = Math.round(furnaceSnapshot.experienceAmount() * 10.0f) / 10.0f;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.001f) {
+            return Component.text("x" + Math.round(rounded), NamedTextColor.WHITE);
+        }
+        return Component.text("x" + String.format(Locale.ROOT, "%.1f", rounded), NamedTextColor.WHITE);
+    }
+
+    private Component capacityText() {
+        if (furnaceSnapshot == null || furnaceSnapshot.fuelCapacity() <= 0) {
+            return Component.text("x0", NamedTextColor.WHITE);
+        }
+        return Component.text("x" + furnaceSnapshot.fuelCapacity(), NamedTextColor.WHITE);
+    }
+
     private ItemStack iconForMaterialName(String materialName) {
         if (materialName == null || materialName.isBlank()) {
             return new ItemStack(Material.AIR);
@@ -259,5 +341,8 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
     private boolean showsRecipe() {
         return data.renderMode() == DisplayRenderMode.RECIPE_ONLY
                 || data.renderMode() == DisplayRenderMode.RECIPE_AND_RESULT;
+    }
+
+    public record FurnaceSnapshot(ItemStack input, ItemStack fuel, ItemStack result, int progressPercent, float experienceAmount, int fuelCapacity, boolean isBurning) {
     }
 }

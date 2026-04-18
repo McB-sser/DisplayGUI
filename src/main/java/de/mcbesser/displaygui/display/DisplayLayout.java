@@ -29,6 +29,6 @@ public record DisplayLayout(
     }
 
     public static DisplayLayout furnace1x5() {
-        return new DisplayLayout("furnace-1x5", 5, 1, -0.84, 1.15, 0.42, 1.62, 0.42f, 0.26f, 0.55f);
+        return new DisplayLayout("furnace-2x3", 2, 3, -0.21, 1.55, 0.50, 2.05, 0.50f, 0.28f, 0.50f);
     }
 }
