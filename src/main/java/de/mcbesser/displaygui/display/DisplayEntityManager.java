@@ -8,6 +8,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Interaction;
@@ -110,11 +111,14 @@ public final class DisplayEntityManager {
         if (player == null || player.getWorld() == null) {
             return null;
         }
-        RayTraceResult rayTrace = player.getWorld().rayTraceEntities(
+        RayTraceResult rayTrace = player.getWorld().rayTrace(
                 player.getEyeLocation(),
                 player.getEyeLocation().getDirection(),
-                8.0,
-                entity -> isManagedEntity(entity) && !isStandEntity(entity) && getSlot(entity) >= 0
+                getSidebarInteractionRange(player),
+                FluidCollisionMode.NEVER,
+                true,
+                0.0,
+                this::isSidebarTarget
         );
         if (rayTrace == null || rayTrace.getHitEntity() == null) {
             return null;
@@ -167,6 +171,21 @@ public final class DisplayEntityManager {
             }
         }
         return new HoveredDisplayInfo(displayId, slotIndex, title, lore);
+    }
+
+    private boolean isSidebarTarget(Entity entity) {
+        return entity instanceof Interaction
+                && isManagedEntity(entity)
+                && !isStandEntity(entity)
+                && "slot".equals(entity.getPersistentDataContainer().get(kindKey, PersistentDataType.STRING))
+                && getSlot(entity) >= 0;
+    }
+
+    private double getSidebarInteractionRange(org.bukkit.entity.Player player) {
+        return switch (player.getGameMode()) {
+            case CREATIVE -> 5.0;
+            default -> 4.5;
+        };
     }
 
     public void refresh(UUID displayId) {
