@@ -127,7 +127,7 @@ public final class DisplayEntityManager {
         UUID displayId = getDisplayId(entity);
         int slotIndex = getSlot(entity);
         DisplayRenderable renderable = displayId == null ? null : renderables.get(displayId);
-        if (renderable == null || slotIndex < 0) {
+        if (renderable == null || !renderable.supportsSidebar() || slotIndex < 0) {
             return null;
         }
         DisplayContent.DisplaySlot slot = findSlot(renderable.content(), slotIndex);

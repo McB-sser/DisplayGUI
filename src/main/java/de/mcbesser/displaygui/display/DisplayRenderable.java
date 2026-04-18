@@ -14,4 +14,8 @@ public interface DisplayRenderable {
     default boolean isActive() {
         return true;
     }
+
+    default boolean supportsSidebar() {
+        return true;
+    }
 }

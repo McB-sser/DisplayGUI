@@ -1232,6 +1232,9 @@ public final class CraftingBannerManager {
         if (data.preset() == DisplayPreset.FURNACE_1X5) {
             return "Ofen";
         }
+        if (data.preset() == DisplayPreset.CRAFTING_3X3) {
+            return "Werkbank";
+        }
         return "DisplayGUI " + presetName(data);
     }
 

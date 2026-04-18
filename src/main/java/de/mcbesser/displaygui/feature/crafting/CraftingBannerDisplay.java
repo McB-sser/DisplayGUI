@@ -186,9 +186,18 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
         }
 
         String title = data.title() == null || data.title().isBlank()
-                ? (data.preset() == DisplayPreset.FURNACE_1X5 ? "Ofen" : "DisplayGUI " + data.preset().id())
+                ? switch (data.preset()) {
+                    case FURNACE_1X5 -> "Ofen";
+                    case CRAFTING_3X3 -> "Werkbank";
+                    default -> "DisplayGUI " + data.preset().id();
+                }
                 : data.title();
         return new DisplayContent(Component.text(title, NamedTextColor.GOLD), slots);
+    }
+
+    @Override
+    public boolean supportsSidebar() {
+        return data.preset() != DisplayPreset.FURNACE_1X5;
     }
 
     private DisplayContent.DisplaySlot slot(int slot, String materialName, String label) {
