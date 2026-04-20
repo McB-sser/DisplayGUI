@@ -1,6 +1,6 @@
 display:
   refresh-ticks: 10
-  max-view-distance: 24.0
+  max-view-distance: 64.0
 
 crafting:
   default-amount: 1

@@ -196,6 +196,15 @@ public final class DisplayEntityManager {
             return;
         }
 
+        Location anchorLocation = renderable.anchor().location();
+        if (!hasNearbyViewer(anchorLocation)) {
+            Cluster existingCluster = clusters.remove(displayId);
+            if (existingCluster != null) {
+                existingCluster.remove();
+            }
+            return;
+        }
+
         Cluster cluster = clusters.get(displayId);
         if (cluster == null || !cluster.isValid() || !cluster.layoutKey().equals(renderable.layout().key())) {
             if (cluster != null) {
@@ -407,6 +416,23 @@ public final class DisplayEntityManager {
         if (slot >= 0) {
             entity.getPersistentDataContainer().set(slotKey, PersistentDataType.INTEGER, slot);
         }
+    }
+
+    private boolean hasNearbyViewer(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return false;
+        }
+        double maxDistance = plugin.getConfig().getDouble("display.max-view-distance", 64.0D);
+        double maxDistanceSquared = maxDistance * maxDistance;
+        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+            if (player == null || !player.isOnline() || player.isDead() || player.getWorld() != location.getWorld()) {
+                continue;
+            }
+            if (player.getLocation().distanceSquared(location) <= maxDistanceSquared) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void cleanupManagedEntities() {
