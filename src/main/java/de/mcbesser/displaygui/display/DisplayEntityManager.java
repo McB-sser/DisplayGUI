@@ -48,6 +48,7 @@ public final class DisplayEntityManager {
     }
 
     public void start() {
+        cleanupManagedEntities();
         long refreshTicks = Math.max(2L, plugin.getConfig().getLong("display.refresh-ticks", 10L));
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 1L, refreshTicks);
     }
@@ -251,6 +252,7 @@ public final class DisplayEntityManager {
     }
 
     private Cluster spawn(DisplayRenderable renderable) {
+        removeEntitiesForDisplay(renderable.uniqueId());
         DisplayAnchor anchor = renderable.anchor();
         DisplayLayout layout = renderable.layout();
         Location titleLocation = transform(anchor.location(), 0.0, layout.titleOffsetY(), 0.0, anchor.yaw());
@@ -404,6 +406,30 @@ public final class DisplayEntityManager {
         entity.getPersistentDataContainer().set(kindKey, PersistentDataType.STRING, kind);
         if (slot >= 0) {
             entity.getPersistentDataContainer().set(slotKey, PersistentDataType.INTEGER, slot);
+        }
+    }
+
+    private void cleanupManagedEntities() {
+        for (org.bukkit.World world : Bukkit.getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (isManagedEntity(entity)) {
+                    entity.remove();
+                }
+            }
+        }
+    }
+
+    private void removeEntitiesForDisplay(UUID displayId) {
+        for (org.bukkit.World world : Bukkit.getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (!entity.isValid() || !isManagedEntity(entity)) {
+                    continue;
+                }
+                UUID entityDisplayId = getDisplayId(entity);
+                if (displayId.equals(entityDisplayId)) {
+                    entity.remove();
+                }
+            }
         }
     }
 

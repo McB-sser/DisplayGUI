@@ -41,8 +41,10 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public final class CraftingBannerManager {
@@ -87,6 +89,9 @@ public final class CraftingBannerManager {
             return;
         }
 
+        Set<String> occupiedLocations = new HashSet<>();
+        boolean removedDuplicates = false;
+
         for (String rawId : section.getKeys(false)) {
             ConfigurationSection entry = section.getConfigurationSection(rawId);
             if (entry == null) {
@@ -111,6 +116,12 @@ public final class CraftingBannerManager {
                 data.setResultPosition(resultPosition == null ? DisplayResultPosition.RIGHT : resultPosition);
                 data.setCustomColumns(clampColumns(entry.getInt("custom-columns", 3)));
                 data.setCustomRows(clampRows(entry.getInt("custom-rows", 3)));
+                String locationKey = locationKey(data.world(), data.x(), data.y(), data.z());
+                if (!occupiedLocations.add(locationKey)) {
+                    plugin.getLogger().warning("Ueberspringe doppelten Display-Eintrag fuer " + locationKey + " (" + id + ")");
+                    removedDuplicates = true;
+                    continue;
+                }
                 Object serializedBanner = entry.get("banner-item");
                 if (serializedBanner instanceof ItemStack itemStack) {
                     data.setBannerItem(itemStack);
@@ -134,6 +145,10 @@ public final class CraftingBannerManager {
                 banners.put(id, data);
             } catch (IllegalArgumentException ignored) {
             }
+        }
+
+        if (removedDuplicates) {
+            save();
         }
     }
 
@@ -205,8 +220,9 @@ public final class CraftingBannerManager {
         if (!BlockUtil.isBanner(block.getType())) {
             return false;
         }
-        UUID existingBannerId = getBannerId(block);
+        UUID existingBannerId = resolveBannerId(block);
         UUID bannerId = existingBannerId == null ? UUID.randomUUID() : existingBannerId;
+        removeDuplicateEntriesAtLocation(block, bannerId);
         Block linkedFurnace = preset == DisplayPreset.FURNACE_1X5 ? findLinkedFurnaceBlock(block) : null;
         if (preset == DisplayPreset.FURNACE_1X5 && linkedFurnace == null) {
             if (actor != null) {
@@ -252,7 +268,7 @@ public final class CraftingBannerManager {
     }
 
     public boolean removeBanner(Block block, Player actor) {
-        UUID bannerId = getBannerId(block);
+        UUID bannerId = resolveBannerId(block);
         if (bannerId == null) {
             return false;
         }
@@ -278,7 +294,7 @@ public final class CraftingBannerManager {
     }
 
     public void handleBannerBroken(Block block) {
-        UUID bannerId = getBannerId(block);
+        UUID bannerId = resolveBannerId(block);
         if (bannerId == null) {
             return;
         }
@@ -291,7 +307,7 @@ public final class CraftingBannerManager {
         if (action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
-        UUID bannerId = getBannerId(block);
+        UUID bannerId = resolveBannerId(block);
         if (bannerId == null) {
             return;
         }
@@ -814,6 +830,10 @@ public final class CraftingBannerManager {
     }
 
     private void refreshDisplay(CraftingBannerData data) {
+        if (!isDisplayChunkLoaded(data)) {
+            displayEntityManager.unregister(data.id());
+            return;
+        }
         Block block = resolveBlock(data);
         if (block == null) {
             displayEntityManager.unregister(data.id());
@@ -925,6 +945,14 @@ public final class CraftingBannerManager {
     private Block resolveBlock(CraftingBannerData data) {
         World world = Bukkit.getWorld(data.world());
         return world == null ? null : world.getBlockAt(data.x(), data.y(), data.z());
+    }
+
+    private boolean isDisplayChunkLoaded(CraftingBannerData data) {
+        World world = Bukkit.getWorld(data.world());
+        if (world == null) {
+            return false;
+        }
+        return world.isChunkLoaded(data.x() >> 4, data.z() >> 4);
     }
 
     private Furnace resolveFurnace(CraftingBannerData data) {
@@ -1064,13 +1092,21 @@ public final class CraftingBannerManager {
     }
 
     private UUID getOrCreateBannerId(Block block) {
-        UUID existing = getBannerId(block);
+        UUID existing = resolveBannerId(block);
         if (existing != null) {
             return existing;
         }
         UUID created = UUID.randomUUID();
         ensureBannerId(block, created);
         return created;
+    }
+
+    private UUID resolveBannerId(Block block) {
+        UUID storedOnBlock = getBannerId(block);
+        if (storedOnBlock != null) {
+            return storedOnBlock;
+        }
+        return findBannerIdByLocation(block);
     }
 
     private void ensureBannerId(Block block, UUID bannerId) {
@@ -1095,6 +1131,47 @@ public final class CraftingBannerManager {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    private UUID findBannerIdByLocation(Block block) {
+        if (block == null || block.getWorld() == null) {
+            return null;
+        }
+        String locationKey = locationKey(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
+        UUID match = null;
+        for (CraftingBannerData data : banners.values()) {
+            if (!locationKey.equals(locationKey(data.world(), data.x(), data.y(), data.z()))) {
+                continue;
+            }
+            if (match == null || data.id().toString().compareTo(match.toString()) < 0) {
+                match = data.id();
+            }
+        }
+        return match;
+    }
+
+    private void removeDuplicateEntriesAtLocation(Block block, UUID keepId) {
+        if (block == null || block.getWorld() == null) {
+            return;
+        }
+        String locationKey = locationKey(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
+        List<UUID> duplicates = new ArrayList<>();
+        for (CraftingBannerData data : banners.values()) {
+            if (data.id().equals(keepId)) {
+                continue;
+            }
+            if (locationKey.equals(locationKey(data.world(), data.x(), data.y(), data.z()))) {
+                duplicates.add(data.id());
+            }
+        }
+        for (UUID duplicateId : duplicates) {
+            banners.remove(duplicateId);
+            displayEntityManager.unregister(duplicateId);
+        }
+    }
+
+    private String locationKey(String world, int x, int y, int z) {
+        return (world == null ? "<null>" : world) + ":" + x + ":" + y + ":" + z;
     }
 
     private ItemStack itemFromName(String materialName) {
@@ -1158,7 +1235,7 @@ public final class CraftingBannerManager {
     }
 
     private CraftingBannerData getBannerData(Block block) {
-        UUID bannerId = getBannerId(block);
+        UUID bannerId = resolveBannerId(block);
         return bannerId == null ? null : banners.get(bannerId);
     }
 
