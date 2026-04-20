@@ -227,7 +227,7 @@ public final class DisplayEntityManager {
 
             background.setItemStack(slot != null && slot.background() != null
                     ? slot.background().clone()
-                    : new ItemStack(Material.LIGHT_GRAY_STAINED_GLASS_PANE));
+                    : new ItemStack(Material.AIR));
             background.setRotation(renderable.anchor().yaw(), 0.0f);
 
             if (slot == null) {
@@ -235,6 +235,8 @@ public final class DisplayEntityManager {
                 amount.text(Component.empty());
                 icon.setRotation(renderable.anchor().yaw(), 0.0f);
                 amount.setRotation(renderable.anchor().yaw(), 0.0f);
+                cluster.interactions.get(i).setInteractionHeight(0.0f);
+                cluster.interactions.get(i).setInteractionWidth(0.0f);
                 continue;
             }
 

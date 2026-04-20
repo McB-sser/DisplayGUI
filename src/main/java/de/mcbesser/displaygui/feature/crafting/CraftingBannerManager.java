@@ -56,10 +56,8 @@ public final class CraftingBannerManager {
     private static final int GENERIC_PREV_SLOT = 45;
     private static final int GENERIC_PAGE_SLOT = 49;
     private static final int GENERIC_NEXT_SLOT = 53;
-    private static final int RESULT_LEFT_SLOT = 45;
     private static final int RESULT_TOP_SLOT = 46;
     private static final int RESULT_BOTTOM_SLOT = 52;
-    private static final int RESULT_RIGHT_SLOT = 53;
     private static final int TITLE_EDIT_SLOT = 4;
 
     private final DisplayGUIPlugin plugin;
@@ -443,10 +441,8 @@ public final class CraftingBannerManager {
         inventory.setItem(26, modeItem(Material.CRAFTING_TABLE, "Anzeige Rezept + Ergebnis", data.renderMode() == DisplayRenderMode.RECIPE_AND_RESULT));
         inventory.setItem(35, modeItem(Material.CHEST, "Anzeige Ergebnis", data.renderMode() == DisplayRenderMode.RESULT_ONLY));
         inventory.setItem(44, modeItem(Material.HONEY_BOTTLE, "Anzeige Ergebnis + Menge", data.renderMode() == DisplayRenderMode.RESULT_WITH_AMOUNT));
-        inventory.setItem(RESULT_LEFT_SLOT, positionItem(Material.ARROW, "Ergebnis links", data.resultPosition() == DisplayResultPosition.LEFT));
         inventory.setItem(RESULT_TOP_SLOT, positionItem(Material.SPECTRAL_ARROW, "Ergebnis oben", data.resultPosition() == DisplayResultPosition.TOP));
         inventory.setItem(RESULT_BOTTOM_SLOT, positionItem(Material.ARROW, "Ergebnis unten", data.resultPosition() == DisplayResultPosition.BOTTOM));
-        inventory.setItem(RESULT_RIGHT_SLOT, positionItem(Material.SPECTRAL_ARROW, "Ergebnis rechts", data.resultPosition() == DisplayResultPosition.RIGHT));
 
         RecipeMatch match = findRecipeMatch(data);
         if (match != null) {
@@ -540,11 +536,6 @@ public final class CraftingBannerManager {
                 openCraftingMenu(player, data.id());
                 return;
             }
-            if (rawSlot == RESULT_LEFT_SLOT) {
-                setResultPosition(data, DisplayResultPosition.LEFT);
-                openCraftingMenu(player, data.id());
-                return;
-            }
             if (rawSlot == RESULT_TOP_SLOT) {
                 setResultPosition(data, DisplayResultPosition.TOP);
                 openCraftingMenu(player, data.id());
@@ -552,11 +543,6 @@ public final class CraftingBannerManager {
             }
             if (rawSlot == RESULT_BOTTOM_SLOT) {
                 setResultPosition(data, DisplayResultPosition.BOTTOM);
-                openCraftingMenu(player, data.id());
-                return;
-            }
-            if (rawSlot == RESULT_RIGHT_SLOT) {
-                setResultPosition(data, DisplayResultPosition.RIGHT);
                 openCraftingMenu(player, data.id());
                 return;
             }

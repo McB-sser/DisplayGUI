@@ -47,7 +47,7 @@ public final class CraftingBannerDisplay implements DisplayRenderable {
     public DisplayLayout layout() {
         if (data.preset() == DisplayPreset.CRAFTING_3X3) {
             if (data.renderMode() == DisplayRenderMode.RESULT_ONLY) {
-                return new DisplayLayout("crafting-result-only", 1, 1, 0.0, 1.55, 0.50, 2.05, 0.50f, 0.28f, 0.50f);
+                return new DisplayLayout("crafting-result-only", 1, 1, 0.0, 0.55, 0.50, 1.05, 0.50f, 0.28f, 0.50f);
             }
             if (data.renderMode() == DisplayRenderMode.RESULT_WITH_AMOUNT) {
                 return new DisplayLayout("crafting-result-amount", 3, 1, 0.0, 0.55, 0.50, 1.05, 0.50f, 0.28f, 0.50f);
