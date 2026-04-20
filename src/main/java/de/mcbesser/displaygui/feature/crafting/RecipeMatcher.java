@@ -72,67 +72,72 @@ public final class RecipeMatcher {
             return null;
         }
 
-        int minRow = 3;
-        int minCol = 3;
-        int maxRow = -1;
-        int maxCol = -1;
-        for (int i = 0; i < matrix.length; i++) {
-            if (isEmpty(matrix[i])) {
-                continue;
-            }
-            int row = i / 3;
-            int col = i % 3;
-            minRow = Math.min(minRow, row);
-            minCol = Math.min(minCol, col);
-            maxRow = Math.max(maxRow, row);
-            maxCol = Math.max(maxCol, col);
-        }
-        if (maxRow == -1) {
-            return null;
-        }
-
-        int usedHeight = maxRow - minRow + 1;
-        int usedWidth = maxCol - minCol + 1;
-        if (usedHeight != shape.length) {
-            return null;
-        }
         int shapeWidth = 0;
         for (String row : shape) {
             shapeWidth = Math.max(shapeWidth, row.length());
         }
-        if (usedWidth != shapeWidth) {
+        if (shape.length > 3 || shapeWidth > 3) {
             return null;
         }
 
         Map<Character, RecipeChoice> choices = recipe.getChoiceMap();
-        Map<Integer, ItemStack> normalized = new HashMap<>();
-        for (int row = 0; row < shape.length; row++) {
-            for (int col = 0; col < shape[row].length(); col++) {
-                char key = shape[row].charAt(col);
-                ItemStack provided = matrix[(minRow + row) * 3 + (minCol + col)];
-                if (key == ' ') {
+        for (int rowOffset = 0; rowOffset <= 3 - shape.length; rowOffset++) {
+            for (int colOffset = 0; colOffset <= 3 - shapeWidth; colOffset++) {
+                Map<Integer, ItemStack> normalized = new HashMap<>();
+                if (matchesShapedAtOffset(matrix, shape, choices, rowOffset, colOffset, normalized)) {
+                    return new RecipeMatch(recipe, recipe.getResult().clone(), normalized);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private boolean matchesShapedAtOffset(ItemStack[] matrix,
+                                          String[] shape,
+                                          Map<Character, RecipeChoice> choices,
+                                          int rowOffset,
+                                          int colOffset,
+                                          Map<Integer, ItemStack> normalized) {
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                ItemStack provided = matrix[(row * 3) + col];
+                boolean withinRows = row >= rowOffset && row < rowOffset + shape.length;
+                int relativeCol = col - colOffset;
+
+                if (!withinRows) {
                     if (!isEmpty(provided)) {
-                        return null;
+                        return false;
                     }
                     continue;
                 }
-                if (!matchesChoice(choices.get(key), provided)) {
-                    return null;
+
+                String shapeRow = shape[row - rowOffset];
+                boolean withinCols = relativeCol >= 0 && relativeCol < shapeRow.length();
+                if (!withinCols) {
+                    if (!isEmpty(provided)) {
+                        return false;
+                    }
+                    continue;
                 }
-                normalized.put((minRow + row) * 3 + (minCol + col), single(provided));
+
+                char key = shapeRow.charAt(relativeCol);
+                RecipeChoice choice = choices.get(key);
+                if (choice == null) {
+                    if (!isEmpty(provided)) {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (!matchesChoice(choice, provided)) {
+                    return false;
+                }
+                normalized.put((row * 3) + col, single(provided));
             }
         }
 
-        for (int i = 0; i < matrix.length; i++) {
-            int row = i / 3;
-            int col = i % 3;
-            boolean inside = row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
-            if (!inside && !isEmpty(matrix[i])) {
-                return null;
-            }
-        }
-
-        return new RecipeMatch(recipe, recipe.getResult().clone(), normalized);
+        return true;
     }
 
     private boolean matchesCookingRecipe(CookingRecipe<?> recipe, Material cookerType) {
