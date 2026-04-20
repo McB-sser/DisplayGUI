@@ -867,37 +867,7 @@ public final class CraftingBannerManager {
         for (int i = 0; i < 9; i++) {
             matrix[i] = itemFromName(data.matrix().get(i));
         }
-        RecipeMatch match = recipeMatcher.findMatchingCraftingRecipe(matrix);
-        if (match == null && data.preset() == DisplayPreset.CRAFTING_3X3 && hasAnyIngredient(matrix)) {
-            plugin.getLogger().info("DisplayGUI recipe miss for banner " + data.id() + " matrix=" + debugMatrix(matrix));
-        }
-        return match;
-    }
-
-    private boolean hasAnyIngredient(ItemStack[] matrix) {
-        for (ItemStack stack : matrix) {
-            if (stack != null && stack.getType() != Material.AIR) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String debugMatrix(ItemStack[] matrix) {
-        StringBuilder builder = new StringBuilder();
-        for (int row = 0; row < 3; row++) {
-            if (row > 0) {
-                builder.append(" / ");
-            }
-            for (int col = 0; col < 3; col++) {
-                if (col > 0) {
-                    builder.append(',');
-                }
-                ItemStack stack = matrix[(row * 3) + col];
-                builder.append(stack == null ? "-" : stack.getType().name());
-            }
-        }
-        return builder.toString();
+        return recipeMatcher.findMatchingCraftingRecipe(matrix);
     }
 
     private CraftingBannerDisplay.FurnaceSnapshot captureFurnaceSnapshot(CraftingBannerData data) {
