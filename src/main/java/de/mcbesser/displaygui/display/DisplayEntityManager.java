@@ -32,6 +32,10 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.util.RayTraceResult;
 
 public final class DisplayEntityManager {
+    private static final double DEFAULT_DETAIL_VIEW_DISTANCE = 8.0D;
+    private static final double DEFAULT_MAX_VIEW_DISTANCE = 64.0D;
+    private static final double PREVIEW_TITLE_OFFSET_Y = 0.42D;
+
     private final DisplayGUIPlugin plugin;
     private final NamespacedKey displayIdKey;
     private final NamespacedKey slotKey;
@@ -197,7 +201,8 @@ public final class DisplayEntityManager {
         }
 
         Location anchorLocation = renderable.anchor().location();
-        if (!hasNearbyViewer(anchorLocation)) {
+        ViewerState viewerState = getViewerState(anchorLocation);
+        if (viewerState == ViewerState.NONE) {
             Cluster existingCluster = clusters.remove(displayId);
             if (existingCluster != null) {
                 existingCluster.remove();
@@ -205,41 +210,49 @@ public final class DisplayEntityManager {
             return;
         }
 
+        boolean detailedVisible = viewerState == ViewerState.DETAIL;
         Cluster cluster = clusters.get(displayId);
-        if (cluster == null || !cluster.isValid() || !cluster.layoutKey().equals(renderable.layout().key())) {
+        if (cluster == null || !cluster.isValid() || !cluster.layoutKey().equals(renderable.layout().key()) || cluster.detailed() != detailedVisible) {
             if (cluster != null) {
                 cluster.remove();
             }
-            cluster = spawn(renderable);
+            cluster = spawn(renderable, detailedVisible);
             clusters.put(displayId, cluster);
         }
 
         DisplayContent content = renderable.content();
         cluster.title.text(content.title());
+        cluster.title.teleport(transform(
+                renderable.anchor().location(),
+                0.0,
+                viewerState == ViewerState.DETAIL ? renderable.layout().titleOffsetY() : PREVIEW_TITLE_OFFSET_Y,
+                0.0,
+                renderable.anchor().yaw()
+        ));
         cluster.title.setRotation(renderable.anchor().yaw(), 0.0f);
 
         DisplayLayout layout = renderable.layout();
+        if (!detailedVisible) {
+            return;
+        }
+
         for (int i = 0; i < layout.slotCount(); i++) {
             DisplayContent.DisplaySlot slot = findSlot(content, i);
             ItemDisplay background = cluster.backgrounds.get(i);
-            ItemDisplay icon = cluster.icons.get(i);
-            TextDisplay amount = cluster.amounts.get(i);
 
             background.setItemStack(slot != null && slot.background() != null
                     ? slot.background().clone()
                     : new ItemStack(Material.AIR));
             background.setRotation(renderable.anchor().yaw(), 0.0f);
 
-            if (slot == null) {
-                icon.setItemStack(new ItemStack(Material.AIR));
-                amount.text(Component.empty());
-                icon.setRotation(renderable.anchor().yaw(), 0.0f);
-                amount.setRotation(renderable.anchor().yaw(), 0.0f);
-                cluster.interactions.get(i).setInteractionHeight(0.0f);
-                cluster.interactions.get(i).setInteractionWidth(0.0f);
+            if (slot == null || isEmptyItem(slot.icon())) {
+                cluster.removeIcon(i);
+                cluster.removeAmount(i);
+                cluster.removeInteraction(i);
                 continue;
             }
 
+            ItemDisplay icon = ensureIcon(cluster, i, renderable, slot);
             icon.setItemStack(slot.icon());
             icon.setTransformation(new Transformation(
                     new Vector3f(),
@@ -248,10 +261,18 @@ public final class DisplayEntityManager {
                     new Quaternionf()
             ));
             icon.setRotation(renderable.anchor().yaw(), 0.0f);
-            amount.text(slot.amountText() == null ? Component.empty() : slot.amountText());
-            amount.setRotation(renderable.anchor().yaw(), 0.0f);
-            cluster.interactions.get(i).setInteractionHeight(slot.interactionHeight());
-            cluster.interactions.get(i).setInteractionWidth(slot.interactionWidth());
+
+            if (isEmptyComponent(slot.amountText())) {
+                cluster.removeAmount(i);
+            } else {
+                TextDisplay amount = ensureAmount(cluster, i, renderable);
+                amount.text(slot.amountText());
+                amount.setRotation(renderable.anchor().yaw(), 0.0f);
+            }
+
+            Interaction interaction = ensureInteraction(cluster, i, renderable);
+            interaction.setInteractionHeight(slot.interactionHeight());
+            interaction.setInteractionWidth(slot.interactionWidth());
         }
     }
 
@@ -262,7 +283,7 @@ public final class DisplayEntityManager {
         }
     }
 
-    private Cluster spawn(DisplayRenderable renderable) {
+    private Cluster spawn(DisplayRenderable renderable, boolean detailed) {
         removeEntitiesForDisplay(renderable.uniqueId());
         DisplayAnchor anchor = renderable.anchor();
         DisplayLayout layout = renderable.layout();
@@ -274,12 +295,16 @@ public final class DisplayEntityManager {
             entity.setRotation(anchor.yaw(), 0.0f);
         });
 
-        List<BlockDisplay> standDisplays = spawnStand(renderable);
+        List<BlockDisplay> standDisplays = spawnStand(renderable, detailed);
         List<Interaction> standInteractions = spawnStandInteractions(renderable);
         List<ItemDisplay> backgrounds = new ArrayList<>(layout.slotCount());
         List<ItemDisplay> icons = new ArrayList<>(layout.slotCount());
         List<TextDisplay> amounts = new ArrayList<>(layout.slotCount());
         List<Interaction> interactions = new ArrayList<>(layout.slotCount());
+
+        if (!detailed) {
+            return new Cluster(layout.key(), false, title, standDisplays, standInteractions, backgrounds, icons, amounts, interactions);
+        }
 
         for (int slot = 0; slot < layout.slotCount(); slot++) {
             int row = slot / layout.columns();
@@ -301,49 +326,12 @@ public final class DisplayEntityManager {
                 entity.setRotation(anchor.yaw(), 0.0f);
             });
             backgrounds.add(background);
-
-            Location iconLocation = transform(anchor.location(), x, y + 0.06, 0.02, anchor.yaw());
-            ItemDisplay icon = anchor.location().getWorld().spawn(iconLocation, ItemDisplay.class, entity -> {
-                prepare(entity, renderable.uniqueId(), -1, "icon");
-                entity.setBillboard(Display.Billboard.FIXED);
-                entity.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
-                entity.setTransformation(new Transformation(
-                        new Vector3f(),
-                        new Quaternionf(),
-                        new Vector3f(layout.itemScale(), layout.itemScale(), layout.itemScale()),
-                        new Quaternionf()
-                ));
-                entity.setRotation(anchor.yaw(), 0.0f);
-            });
-            icons.add(icon);
-
-            Location amountLocation = transform(anchor.location(), x, y - 0.22, 0.02, anchor.yaw());
-            TextDisplay amount = anchor.location().getWorld().spawn(amountLocation, TextDisplay.class, entity -> {
-                prepare(entity, renderable.uniqueId(), -1, "amount");
-                entity.setBillboard(Display.Billboard.FIXED);
-                entity.setTransformation(new Transformation(
-                        new Vector3f(),
-                        new Quaternionf(),
-                        new Vector3f(layout.textScale(), layout.textScale(), layout.textScale()),
-                        new Quaternionf()
-                ));
-                entity.setRotation(anchor.yaw(), 0.0f);
-            });
-            amounts.add(amount);
-
-            final int slotIndex = slot;
-            Location interactionLocation = transform(anchor.location(), x, y - 0.255, 0.0, anchor.yaw());
-            Interaction interaction = anchor.location().getWorld().spawn(interactionLocation, Interaction.class, entity -> {
-                prepare(entity, renderable.uniqueId(), slotIndex, "slot");
-                entity.setResponsive(true);
-                entity.setInteractionHeight(0.50f);
-                entity.setInteractionWidth(0.50f);
-                entity.setRotation(anchor.yaw(), 0.0f);
-            });
-            interactions.add(interaction);
+            icons.add(null);
+            amounts.add(null);
+            interactions.add(null);
         }
 
-        return new Cluster(layout.key(), title, standDisplays, standInteractions, backgrounds, icons, amounts, interactions);
+        return new Cluster(layout.key(), true, title, standDisplays, standInteractions, backgrounds, icons, amounts, interactions);
     }
 
     private DisplayContent.DisplaySlot findSlot(DisplayContent content, int index) {
@@ -355,25 +343,111 @@ public final class DisplayEntityManager {
         return null;
     }
 
-    private List<BlockDisplay> spawnStand(DisplayRenderable renderable) {
+    private boolean isEmptyItem(ItemStack stack) {
+        return stack == null || stack.getType() == Material.AIR;
+    }
+
+    private boolean isEmptyComponent(Component component) {
+        return component == null || PlainTextComponentSerializer.plainText().serialize(component).trim().isEmpty();
+    }
+
+    private SlotPosition slotPosition(DisplayRenderable renderable, int slot) {
+        DisplayLayout layout = renderable.layout();
+        int row = slot / layout.columns();
+        int column = slot % layout.columns();
+        double x = (-((layout.columns() - 1) * layout.slotSpacing()) / 2.0) + (column * layout.slotSpacing());
+        double y = layout.originY() - (row * layout.slotSpacing());
+        return new SlotPosition(x, y);
+    }
+
+    private ItemDisplay ensureIcon(Cluster cluster, int slot, DisplayRenderable renderable, DisplayContent.DisplaySlot displaySlot) {
+        ItemDisplay existing = cluster.icons.get(slot);
+        if (existing != null && existing.isValid()) {
+            return existing;
+        }
+        DisplayAnchor anchor = renderable.anchor();
+        SlotPosition position = slotPosition(renderable, slot);
+        Location iconLocation = transform(anchor.location(), position.x(), position.y() + 0.06, 0.02, anchor.yaw());
+        ItemDisplay created = anchor.location().getWorld().spawn(iconLocation, ItemDisplay.class, entity -> {
+            prepare(entity, renderable.uniqueId(), -1, "icon");
+            entity.setBillboard(Display.Billboard.FIXED);
+            entity.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
+            entity.setTransformation(new Transformation(
+                    new Vector3f(),
+                    new Quaternionf(),
+                    new Vector3f(displaySlot.scale(), displaySlot.scale(), displaySlot.scale()),
+                    new Quaternionf()
+            ));
+            entity.setRotation(anchor.yaw(), 0.0f);
+        });
+        cluster.icons.set(slot, created);
+        return created;
+    }
+
+    private TextDisplay ensureAmount(Cluster cluster, int slot, DisplayRenderable renderable) {
+        TextDisplay existing = cluster.amounts.get(slot);
+        if (existing != null && existing.isValid()) {
+            return existing;
+        }
+        DisplayAnchor anchor = renderable.anchor();
+        DisplayLayout layout = renderable.layout();
+        SlotPosition position = slotPosition(renderable, slot);
+        Location amountLocation = transform(anchor.location(), position.x(), position.y() - 0.22, 0.02, anchor.yaw());
+        TextDisplay created = anchor.location().getWorld().spawn(amountLocation, TextDisplay.class, entity -> {
+            prepare(entity, renderable.uniqueId(), -1, "amount");
+            entity.setBillboard(Display.Billboard.FIXED);
+            entity.setTransformation(new Transformation(
+                    new Vector3f(),
+                    new Quaternionf(),
+                    new Vector3f(layout.textScale(), layout.textScale(), layout.textScale()),
+                    new Quaternionf()
+            ));
+            entity.setRotation(anchor.yaw(), 0.0f);
+        });
+        cluster.amounts.set(slot, created);
+        return created;
+    }
+
+    private Interaction ensureInteraction(Cluster cluster, int slot, DisplayRenderable renderable) {
+        Interaction existing = cluster.interactions.get(slot);
+        if (existing != null && existing.isValid()) {
+            return existing;
+        }
+        DisplayAnchor anchor = renderable.anchor();
+        SlotPosition position = slotPosition(renderable, slot);
+        Location interactionLocation = transform(anchor.location(), position.x(), position.y() - 0.255, 0.0, anchor.yaw());
+        Interaction created = anchor.location().getWorld().spawn(interactionLocation, Interaction.class, entity -> {
+            prepare(entity, renderable.uniqueId(), slot, "slot");
+            entity.setResponsive(true);
+            entity.setInteractionHeight(0.50f);
+            entity.setInteractionWidth(0.50f);
+            entity.setRotation(anchor.yaw(), 0.0f);
+        });
+        cluster.interactions.set(slot, created);
+        return created;
+    }
+
+    private List<BlockDisplay> spawnStand(DisplayRenderable renderable, boolean detailed) {
         DisplayAnchor anchor = renderable.anchor();
         DisplayLayout layout = renderable.layout();
         List<BlockDisplay> stands = new ArrayList<>(2);
         float poleHeight = 1.0625f + Math.max(0, layout.rows() - 1) * 0.5f;
 
-        Location poleLocation = transform(anchor.location(), 0.0, 1.02, -0.04, anchor.yaw());
-        BlockDisplay pole = anchor.location().getWorld().spawn(poleLocation, BlockDisplay.class, entity -> {
-            prepare(entity, renderable.uniqueId(), -1, "stand");
-            entity.setBlock(org.bukkit.Material.DARK_OAK_FENCE.createBlockData());
-            entity.setTransformation(new Transformation(
-                    new Vector3f(-0.11f, -1.0f, -0.11f),
-                    new Quaternionf(),
-                    new Vector3f(0.22f, poleHeight, 0.22f),
-                    new Quaternionf()
-            ));
-            entity.setRotation(anchor.yaw(), 0.0f);
-        });
-        stands.add(pole);
+        if (detailed) {
+            Location poleLocation = transform(anchor.location(), 0.0, 1.02, -0.04, anchor.yaw());
+            BlockDisplay pole = anchor.location().getWorld().spawn(poleLocation, BlockDisplay.class, entity -> {
+                prepare(entity, renderable.uniqueId(), -1, "stand");
+                entity.setBlock(org.bukkit.Material.DARK_OAK_FENCE.createBlockData());
+                entity.setTransformation(new Transformation(
+                        new Vector3f(-0.11f, -1.0f, -0.11f),
+                        new Quaternionf(),
+                        new Vector3f(0.22f, poleHeight, 0.22f),
+                        new Quaternionf()
+                ));
+                entity.setRotation(anchor.yaw(), 0.0f);
+            });
+            stands.add(pole);
+        }
 
         Location baseLocation = transform(anchor.location(), 0.0, 0.0, 0.0, anchor.yaw());
         BlockDisplay base = anchor.location().getWorld().spawn(baseLocation, BlockDisplay.class, entity -> {
@@ -420,21 +494,28 @@ public final class DisplayEntityManager {
         }
     }
 
-    private boolean hasNearbyViewer(Location location) {
+    private ViewerState getViewerState(Location location) {
         if (location == null || location.getWorld() == null) {
-            return false;
+            return ViewerState.NONE;
         }
-        double maxDistance = plugin.getConfig().getDouble("display.max-view-distance", 64.0D);
+        double detailDistance = plugin.getConfig().getDouble("display.detail-view-distance", DEFAULT_DETAIL_VIEW_DISTANCE);
+        double maxDistance = plugin.getConfig().getDouble("display.max-view-distance", DEFAULT_MAX_VIEW_DISTANCE);
+        double detailDistanceSquared = detailDistance * detailDistance;
         double maxDistanceSquared = maxDistance * maxDistance;
+        boolean hasPreviewViewer = false;
         for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
             if (player == null || !player.isOnline() || player.isDead() || player.getWorld() != location.getWorld()) {
                 continue;
             }
-            if (player.getLocation().distanceSquared(location) <= maxDistanceSquared) {
-                return true;
+            double distanceSquared = player.getLocation().distanceSquared(location);
+            if (distanceSquared <= detailDistanceSquared) {
+                return ViewerState.DETAIL;
+            }
+            if (distanceSquared <= maxDistanceSquared) {
+                hasPreviewViewer = true;
             }
         }
-        return false;
+        return hasPreviewViewer ? ViewerState.PREVIEW : ViewerState.NONE;
     }
 
     private void cleanupManagedEntities() {
@@ -489,8 +570,18 @@ public final class DisplayEntityManager {
         return builder.build();
     }
 
+    private enum ViewerState {
+        NONE,
+        PREVIEW,
+        DETAIL
+    }
+
+    private record SlotPosition(double x, double y) {
+    }
+
     private record Cluster(
             String layoutKey,
+            boolean detailed,
             TextDisplay title,
             List<BlockDisplay> standDisplays,
             List<Interaction> standInteractions,
@@ -499,6 +590,30 @@ public final class DisplayEntityManager {
             List<TextDisplay> amounts,
             List<Interaction> interactions
     ) {
+        private void removeIcon(int slot) {
+            ItemDisplay display = icons.get(slot);
+            if (display != null && display.isValid()) {
+                display.remove();
+            }
+            icons.set(slot, null);
+        }
+
+        private void removeAmount(int slot) {
+            TextDisplay display = amounts.get(slot);
+            if (display != null && display.isValid()) {
+                display.remove();
+            }
+            amounts.set(slot, null);
+        }
+
+        private void removeInteraction(int slot) {
+            Interaction interaction = interactions.get(slot);
+            if (interaction != null && interaction.isValid()) {
+                interaction.remove();
+            }
+            interactions.set(slot, null);
+        }
+
         private boolean isValid() {
             if (title == null || !title.isValid()) {
                 return false;
@@ -519,17 +634,17 @@ public final class DisplayEntityManager {
                 }
             }
             for (ItemDisplay display : icons) {
-                if (display == null || !display.isValid()) {
+                if (display != null && !display.isValid()) {
                     return false;
                 }
             }
             for (TextDisplay display : amounts) {
-                if (display == null || !display.isValid()) {
+                if (display != null && !display.isValid()) {
                     return false;
                 }
             }
             for (Interaction interaction : interactions) {
-                if (interaction == null || !interaction.isValid()) {
+                if (interaction != null && !interaction.isValid()) {
                     return false;
                 }
             }

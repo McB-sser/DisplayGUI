@@ -7,6 +7,11 @@ import de.mcbesser.displaygui.display.DisplayLayout;
 import de.mcbesser.displaygui.util.BlockUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.dizitart.no2.Nitrite;
+import org.dizitart.no2.collection.Document;
+import org.dizitart.no2.collection.NitriteCollection;
+import org.dizitart.no2.filters.Filter;
+import org.dizitart.no2.mvstore.MVStoreModule;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -34,11 +39,16 @@ import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.io.BukkitObjectInputStream;
+import org.bukkit.util.io.BukkitObjectOutputStream;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -64,7 +74,10 @@ public final class CraftingBannerManager {
     private final DisplayEntityManager displayEntityManager;
     private final RecipeMatcher recipeMatcher = new RecipeMatcher();
     private final Map<UUID, CraftingBannerData> banners = new HashMap<>();
-    private final File dataFile;
+    private final File legacyDataFile;
+    private final File databaseFile;
+    private final Nitrite database;
+    private final NitriteCollection bannerCollection;
     private final NamespacedKey bannerIdKey;
     private BukkitTask refreshTask;
     private TitlePromptListener titlePromptListener;
@@ -72,16 +85,37 @@ public final class CraftingBannerManager {
     public CraftingBannerManager(DisplayGUIPlugin plugin, DisplayEntityManager displayEntityManager) {
         this.plugin = plugin;
         this.displayEntityManager = displayEntityManager;
-        this.dataFile = new File(plugin.getDataFolder(), "banners.yml");
+        if (!plugin.getDataFolder().exists()) {
+            plugin.getDataFolder().mkdirs();
+        }
+        this.legacyDataFile = new File(plugin.getDataFolder(), "banners.yml");
+        this.databaseFile = new File(plugin.getDataFolder(), "displaygui-data.db");
+        MVStoreModule storeModule = MVStoreModule.withConfig()
+                .filePath(databaseFile.getAbsolutePath())
+                .build();
+        this.database = Nitrite.builder()
+                .loadModule(storeModule)
+                .openOrCreate();
+        this.bannerCollection = database.getCollection("banners");
         this.bannerIdKey = new NamespacedKey(plugin, "banner-id");
     }
 
     public void load() {
         banners.clear();
-        if (!dataFile.exists()) {
+        if (bannerCollection.size() == 0 && legacyDataFile.exists()) {
+            loadLegacyYamlData();
+            save();
+            backupLegacyYaml();
             return;
         }
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(dataFile);
+        loadNitriteData();
+    }
+
+    private void loadLegacyYamlData() {
+        if (!legacyDataFile.exists()) {
+            return;
+        }
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(legacyDataFile);
         ConfigurationSection section = config.getConfigurationSection("banners");
         if (section == null) {
             return;
@@ -150,6 +184,32 @@ public final class CraftingBannerManager {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void loadNitriteData() {
+        Set<String> occupiedLocations = new HashSet<>();
+        boolean removedDuplicates = false;
+
+        for (Document document : bannerCollection.find()) {
+            try {
+                CraftingBannerData data = fromDocument(document);
+                String locationKey = locationKey(data.world(), data.x(), data.y(), data.z());
+                if (!occupiedLocations.add(locationKey)) {
+                    plugin.getLogger().warning("Ueberspringe doppelten Display-Eintrag fuer " + locationKey + " (" + data.id() + ")");
+                    removedDuplicates = true;
+                    continue;
+                }
+                normalizeMatrixForPreset(data);
+                banners.put(data.id(), data);
+            } catch (RuntimeException exception) {
+                plugin.getLogger().warning("Display-Eintrag aus Datenbank ignoriert: " + exception.getMessage());
+            }
+        }
+
+        if (removedDuplicates) {
+            save();
+        }
+    }
+
     public void start() {
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAllDisplays, 20L, 20L);
         Bukkit.getScheduler().runTask(plugin, this::refreshAllDisplays);
@@ -164,38 +224,151 @@ public final class CraftingBannerManager {
         for (UUID id : new ArrayList<>(banners.keySet())) {
             displayEntityManager.unregister(id);
         }
+        database.close();
     }
 
     public void save() {
-        YamlConfiguration config = new YamlConfiguration();
+        bannerCollection.remove(Filter.ALL);
         for (CraftingBannerData data : banners.values()) {
-            String path = "banners." + data.id();
-            config.set(path + ".world", data.world());
-            config.set(path + ".x", data.x());
-            config.set(path + ".y", data.y());
-            config.set(path + ".z", data.z());
-            config.set(path + ".yaw", data.yaw());
-            config.set(path + ".linked-block-x", data.hasLinkedBlock() ? data.linkedBlockX() : null);
-            config.set(path + ".linked-block-y", data.hasLinkedBlock() ? data.linkedBlockY() : null);
-            config.set(path + ".linked-block-z", data.hasLinkedBlock() ? data.linkedBlockZ() : null);
-            config.set(path + ".preset", data.preset().id());
-            config.set(path + ".custom-columns", data.customColumns());
-            config.set(path + ".custom-rows", data.customRows());
-            config.set(path + ".craft-amount", data.craftAmount());
-            config.set(path + ".title", data.title());
-            config.set(path + ".render-mode", data.renderMode().id());
-            config.set(path + ".result-position", data.resultPosition().id());
-            config.set(path + ".banner-item", data.bannerItem());
-            config.set(path + ".matrix", data.matrix());
-            config.set(path + ".labels", data.slotLabels());
-            config.set(path + ".actions", data.slotActions());
+            bannerCollection.insert(toDocument(data));
         }
-        try {
-            dataFile.getParentFile().mkdirs();
-            config.save(dataFile);
+        database.commit();
+    }
+
+    private Document toDocument(CraftingBannerData data) {
+        return Document.createDocument("id", data.id().toString())
+                .put("world", data.world())
+                .put("x", data.x())
+                .put("y", data.y())
+                .put("z", data.z())
+                .put("yaw", data.yaw())
+                .put("linkedBlockX", data.hasLinkedBlock() ? data.linkedBlockX() : null)
+                .put("linkedBlockY", data.hasLinkedBlock() ? data.linkedBlockY() : null)
+                .put("linkedBlockZ", data.hasLinkedBlock() ? data.linkedBlockZ() : null)
+                .put("preset", data.preset().id())
+                .put("customColumns", data.customColumns())
+                .put("customRows", data.customRows())
+                .put("craftAmount", data.craftAmount())
+                .put("title", data.title())
+                .put("renderMode", data.renderMode().id())
+                .put("resultPosition", data.resultPosition().id())
+                .put("bannerItem", serializeItemStack(data.bannerItem()))
+                .put("matrix", new ArrayList<>(data.matrix()))
+                .put("labels", new ArrayList<>(data.slotLabels()))
+                .put("actions", new ArrayList<>(data.slotActions()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private CraftingBannerData fromDocument(Document document) {
+        UUID id = UUID.fromString(document.get("id", String.class));
+        CraftingBannerData data = new CraftingBannerData(id);
+        data.setWorld(document.get("world", String.class));
+        data.setX(intValue(document.get("x")));
+        data.setY(intValue(document.get("y")));
+        data.setZ(intValue(document.get("z")));
+        data.setYaw((float) doubleValue(document.get("yaw")));
+        Integer linkedBlockX = nullableInt(document.get("linkedBlockX"));
+        Integer linkedBlockY = nullableInt(document.get("linkedBlockY"));
+        Integer linkedBlockZ = nullableInt(document.get("linkedBlockZ"));
+        data.setLinkedBlockX(linkedBlockX == null ? Integer.MIN_VALUE : linkedBlockX);
+        data.setLinkedBlockY(linkedBlockY == null ? Integer.MIN_VALUE : linkedBlockY);
+        data.setLinkedBlockZ(linkedBlockZ == null ? Integer.MIN_VALUE : linkedBlockZ);
+        DisplayPreset preset = DisplayPreset.fromId(defaultString(document.get("preset", String.class), DisplayPreset.CRAFTING_3X3.id()));
+        data.setPreset(preset == null ? DisplayPreset.CRAFTING_3X3 : preset);
+        data.setCustomColumns(clampColumns(intValue(document.get("customColumns"), 3)));
+        data.setCustomRows(clampRows(intValue(document.get("customRows"), 3)));
+        data.setCraftAmount(clampAmount(intValue(document.get("craftAmount"), 1)));
+        data.setTitle(defaultString(document.get("title", String.class), "DisplayGUI"));
+        DisplayRenderMode renderMode = DisplayRenderMode.fromId(defaultString(document.get("renderMode", String.class), DisplayRenderMode.RECIPE_ONLY.id()));
+        data.setRenderMode(renderMode == null ? DisplayRenderMode.RECIPE_ONLY : renderMode);
+        DisplayResultPosition resultPosition = DisplayResultPosition.fromId(defaultString(document.get("resultPosition", String.class), DisplayResultPosition.RIGHT.id()));
+        data.setResultPosition(resultPosition == null ? DisplayResultPosition.RIGHT : resultPosition);
+        data.setBannerItem(deserializeItemStack(document.get("bannerItem", String.class)));
+
+        copyStrings((List<String>) document.get("matrix", List.class), data.matrix());
+        copyStrings((List<String>) document.get("labels", List.class), data.slotLabels());
+        copyActions((List<String>) document.get("actions", List.class), data.slotActions());
+        return data;
+    }
+
+    private void backupLegacyYaml() {
+        if (!legacyDataFile.exists()) {
+            return;
+        }
+        File backup = new File(legacyDataFile.getParentFile(), legacyDataFile.getName() + ".migrated");
+        if (backup.exists()) {
+            return;
+        }
+        if (!legacyDataFile.renameTo(backup)) {
+            plugin.getLogger().warning("Konnte alte banners.yml nach der Nitrite-Migration nicht umbenennen.");
+        }
+    }
+
+    private String serializeItemStack(ItemStack itemStack) {
+        if (itemStack == null) {
+            return null;
+        }
+        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+             BukkitObjectOutputStream output = new BukkitObjectOutputStream(bytes)) {
+            output.writeObject(itemStack);
+            return Base64.getEncoder().encodeToString(bytes.toByteArray());
         } catch (IOException exception) {
-            plugin.getLogger().warning("Konnte banners.yml nicht speichern: " + exception.getMessage());
+            plugin.getLogger().warning("Konnte Banner-Item nicht serialisieren: " + exception.getMessage());
+            return null;
         }
+    }
+
+    private ItemStack deserializeItemStack(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return null;
+        }
+        try (ByteArrayInputStream bytes = new ByteArrayInputStream(Base64.getDecoder().decode(encoded));
+             BukkitObjectInputStream input = new BukkitObjectInputStream(bytes)) {
+            Object value = input.readObject();
+            return value instanceof ItemStack itemStack ? itemStack : null;
+        } catch (IOException | ClassNotFoundException | IllegalArgumentException exception) {
+            plugin.getLogger().warning("Konnte Banner-Item nicht laden: " + exception.getMessage());
+            return null;
+        }
+    }
+
+    private void copyStrings(List<String> source, List<String> target) {
+        if (source == null) {
+            return;
+        }
+        for (int i = 0; i < Math.min(target.size(), source.size()); i++) {
+            target.set(i, source.get(i) == null ? "" : source.get(i));
+        }
+    }
+
+    private void copyActions(List<String> source, List<String> target) {
+        if (source == null) {
+            return;
+        }
+        for (int i = 0; i < Math.min(target.size(), source.size()); i++) {
+            DisplaySlotAction action = DisplaySlotAction.fromId(source.get(i));
+            target.set(i, (action == null ? DisplaySlotAction.NONE : action).id());
+        }
+    }
+
+    private int intValue(Object value) {
+        return intValue(value, 0);
+    }
+
+    private int intValue(Object value, int fallback) {
+        return value instanceof Number number ? number.intValue() : fallback;
+    }
+
+    private Integer nullableInt(Object value) {
+        return value instanceof Number number ? number.intValue() : null;
+    }
+
+    private double doubleValue(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0.0D;
+    }
+
+    private String defaultString(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     public Collection<CraftingBannerData> allBanners() {
