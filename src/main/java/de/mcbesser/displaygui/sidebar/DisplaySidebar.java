@@ -21,16 +21,19 @@ import java.util.UUID;
 public final class DisplaySidebar {
     private static final String OBJECTIVE_NAME = "displaygui_info";
     private static final int MAX_LINES = 8;
+    private static final int PLAYER_REFRESH_BUDGET = 6;
 
     private final DisplayGUIPlugin plugin;
     private BukkitTask task;
+    private int refreshCursor;
 
     public DisplaySidebar(DisplayGUIPlugin plugin) {
         this.plugin = plugin;
     }
 
     public void start() {
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 1L, 10L);
+        refreshCursor = 0;
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 6L, 10L);
     }
 
     public void stop() {
@@ -94,9 +97,19 @@ public final class DisplaySidebar {
     }
 
     private void refreshAll() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            refresh(player);
+        List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
+        if (players.isEmpty()) {
+            refreshCursor = 0;
+            return;
         }
+        if (refreshCursor >= players.size()) {
+            refreshCursor = 0;
+        }
+        int count = Math.min(players.size(), PLAYER_REFRESH_BUDGET);
+        for (int i = 0; i < count; i++) {
+            refresh(players.get((refreshCursor + i) % players.size()));
+        }
+        refreshCursor = (refreshCursor + count) % players.size();
     }
 
     private Component formatLine(Component line) {

@@ -1,5 +1,6 @@
 display:
   refresh-ticks: 10
+  refresh-budget-per-run: 4
   detail-view-distance: 8.0
   max-view-distance: 64.0
 

@@ -211,8 +211,8 @@ public final class CraftingBannerManager {
     }
 
     public void start() {
-        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAllDisplays, 20L, 20L);
-        Bukkit.getScheduler().runTask(plugin, this::refreshAllDisplays);
+        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAllDisplays, 22L, 20L);
+        Bukkit.getScheduler().runTaskLater(plugin, this::refreshAllDisplays, 9L);
     }
 
     public void shutdown() {

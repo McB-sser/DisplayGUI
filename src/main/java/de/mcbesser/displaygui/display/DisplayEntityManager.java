@@ -53,6 +53,7 @@ public final class DisplayEntityManager {
     private final Map<UUID, Cluster> clusters = new HashMap<>();
     private final Set<UUID> closingClusters = new HashSet<>();
     private BukkitTask task;
+    private int refreshCursor;
 
     public DisplayEntityManager(DisplayGUIPlugin plugin) {
         this.plugin = plugin;
@@ -63,8 +64,9 @@ public final class DisplayEntityManager {
 
     public void start() {
         cleanupManagedEntities();
+        refreshCursor = 0;
         long refreshTicks = Math.max(2L, plugin.getConfig().getLong("display.refresh-ticks", 10L));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 1L, refreshTicks);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAll, 3L, refreshTicks);
     }
 
     public void shutdown() {
@@ -77,6 +79,7 @@ public final class DisplayEntityManager {
         }
         clusters.clear();
         renderables.clear();
+        refreshCursor = 0;
     }
 
     public void register(DisplayRenderable renderable) {
@@ -303,9 +306,20 @@ public final class DisplayEntityManager {
     }
 
     private void refreshAll() {
+        if (renderables.isEmpty()) {
+            refreshCursor = 0;
+            return;
+        }
         List<UUID> ids = new ArrayList<>(renderables.keySet());
-        for (UUID id : ids) {
-            refresh(id);
+        int budget = Math.max(1, plugin.getConfig().getInt("display.refresh-budget-per-run", 4));
+        int processed = 0;
+        while (processed < budget && processed < ids.size()) {
+            if (refreshCursor >= ids.size()) {
+                refreshCursor = 0;
+            }
+            refresh(ids.get(refreshCursor));
+            refreshCursor++;
+            processed++;
         }
     }
 
