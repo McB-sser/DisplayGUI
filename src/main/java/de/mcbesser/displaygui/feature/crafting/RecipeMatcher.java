@@ -47,10 +47,20 @@ public final class RecipeMatcher {
             if (recipe instanceof CookingRecipe<?> cookingRecipe
                     && matchesCookingRecipe(cookingRecipe, cookerType)
                     && matchesChoice(cookingRecipe.getInputChoice(), ingredient)) {
-                return new RecipeMatch(recipe, cookingRecipe.getResult().clone(), Map.of(0, single(ingredient)));
+                return new RecipeMatch(
+                        recipe,
+                        cookingRecipe.getResult().clone(),
+                        Map.of(0, single(ingredient)),
+                        Map.of(0, cookingRecipe.getInputChoice())
+                );
             }
             if (recipe instanceof StonecuttingRecipe stonecuttingRecipe && matchesChoice(stonecuttingRecipe.getInputChoice(), ingredient)) {
-                return new RecipeMatch(recipe, stonecuttingRecipe.getResult().clone(), Map.of(0, single(ingredient)));
+                return new RecipeMatch(
+                        recipe,
+                        stonecuttingRecipe.getResult().clone(),
+                        Map.of(0, single(ingredient)),
+                        Map.of(0, stonecuttingRecipe.getInputChoice())
+                );
             }
         }
         return null;
@@ -84,8 +94,9 @@ public final class RecipeMatcher {
         for (int rowOffset = 0; rowOffset <= 3 - shape.length; rowOffset++) {
             for (int colOffset = 0; colOffset <= 3 - shapeWidth; colOffset++) {
                 Map<Integer, ItemStack> normalized = new HashMap<>();
-                if (matchesShapedAtOffset(matrix, shape, choices, rowOffset, colOffset, normalized)) {
-                    return new RecipeMatch(recipe, recipe.getResult().clone(), normalized);
+                Map<Integer, RecipeChoice> matchedChoices = new HashMap<>();
+                if (matchesShapedAtOffset(matrix, shape, choices, rowOffset, colOffset, normalized, matchedChoices)) {
+                    return new RecipeMatch(recipe, recipe.getResult().clone(), normalized, matchedChoices);
                 }
             }
         }
@@ -98,7 +109,8 @@ public final class RecipeMatcher {
                                           Map<Character, RecipeChoice> choices,
                                           int rowOffset,
                                           int colOffset,
-                                          Map<Integer, ItemStack> normalized) {
+                                          Map<Integer, ItemStack> normalized,
+                                          Map<Integer, RecipeChoice> matchedChoices) {
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 3; col++) {
                 ItemStack provided = matrix[(row * 3) + col];
@@ -133,7 +145,9 @@ public final class RecipeMatcher {
                 if (!matchesChoice(choice, provided)) {
                     return false;
                 }
-                normalized.put((row * 3) + col, single(provided));
+                int slot = (row * 3) + col;
+                normalized.put(slot, single(provided));
+                matchedChoices.put(slot, choice);
             }
         }
 
@@ -152,11 +166,11 @@ public final class RecipeMatcher {
 
     private RecipeMatch matchShapeless(ShapelessRecipe recipe, ItemStack[] matrix) {
         List<ItemStack> provided = new ArrayList<>();
-        Map<Integer, ItemStack> normalized = new HashMap<>();
+        List<Integer> providedSlots = new ArrayList<>();
         for (int i = 0; i < matrix.length; i++) {
             if (!isEmpty(matrix[i])) {
                 provided.add(single(matrix[i]));
-                normalized.put(i, single(matrix[i]));
+                providedSlots.add(i);
             }
         }
 
@@ -166,6 +180,8 @@ public final class RecipeMatcher {
         }
 
         boolean[] used = new boolean[provided.size()];
+        Map<Integer, ItemStack> normalized = new HashMap<>();
+        Map<Integer, RecipeChoice> matchedChoices = new HashMap<>();
         for (RecipeChoice choice : choices) {
             boolean matched = false;
             for (int i = 0; i < provided.size(); i++) {
@@ -174,6 +190,9 @@ public final class RecipeMatcher {
                 }
                 if (matchesChoice(choice, provided.get(i))) {
                     used[i] = true;
+                    int slot = providedSlots.get(i);
+                    normalized.put(slot, provided.get(i));
+                    matchedChoices.put(slot, choice);
                     matched = true;
                     break;
                 }
@@ -183,7 +202,7 @@ public final class RecipeMatcher {
             }
         }
 
-        return new RecipeMatch(recipe, recipe.getResult().clone(), normalized);
+        return new RecipeMatch(recipe, recipe.getResult().clone(), normalized, matchedChoices);
     }
 
     private boolean matchesChoice(RecipeChoice choice, ItemStack stack) {

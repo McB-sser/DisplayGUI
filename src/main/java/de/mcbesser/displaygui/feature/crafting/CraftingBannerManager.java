@@ -36,6 +36,7 @@ import org.bukkit.inventory.FurnaceInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.Recipe;
+import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
@@ -919,56 +920,113 @@ public final class CraftingBannerManager {
             }
             totalAmount -= give.getAmount();
         }
-        player.sendMessage(Component.text("Gecraftet: " + crafts + "x " + result.getType(), NamedTextColor.GREEN));
+        player.sendMessage(Component.text("Gecraftet: ", NamedTextColor.GREEN)
+                .append(Component.text(crafts + "x ", NamedTextColor.GREEN))
+                .append(resolveResultName(result)));
     }
 
     private int maxCraftsPossible(PlayerInventory inventory, RecipeMatch match) {
-        Map<Material, Integer> costs = new HashMap<>();
-        for (ItemStack ingredient : match.normalizedIngredients().values()) {
-            costs.merge(ingredient.getType(), 1, Integer::sum);
+        if (match.ingredientChoices().isEmpty()) {
+            return 0;
         }
-
-        int max = Integer.MAX_VALUE;
-        for (Map.Entry<Material, Integer> entry : costs.entrySet()) {
-            int available = countMaterial(inventory, entry.getKey());
-            max = Math.min(max, available / entry.getValue());
+        ItemStack[] contents = inventory.getStorageContents();
+        int max = 0;
+        while (canConsumeIngredients(contents, match, max + 1)) {
+            max++;
         }
-        return max == Integer.MAX_VALUE ? 0 : max;
-    }
-
-    private int countMaterial(PlayerInventory inventory, Material material) {
-        int total = 0;
-        for (ItemStack stack : inventory.getStorageContents()) {
-            if (stack != null && stack.getType() == material) {
-                total += stack.getAmount();
-            }
-        }
-        return total;
+        return max;
     }
 
     private void consumeIngredients(PlayerInventory inventory, RecipeMatch match, int crafts) {
-        Map<Material, Integer> costs = new HashMap<>();
-        for (ItemStack ingredient : match.normalizedIngredients().values()) {
-            costs.merge(ingredient.getType(), crafts, Integer::sum);
-        }
-
         ItemStack[] contents = inventory.getStorageContents();
-        for (Map.Entry<Material, Integer> entry : costs.entrySet()) {
-            int remaining = entry.getValue();
-            for (int i = 0; i < contents.length && remaining > 0; i++) {
-                ItemStack stack = contents[i];
-                if (stack == null || stack.getType() != entry.getKey()) {
-                    continue;
-                }
-                int taken = Math.min(stack.getAmount(), remaining);
-                stack.setAmount(stack.getAmount() - taken);
-                remaining -= taken;
-                if (stack.getAmount() <= 0) {
-                    contents[i] = null;
-                }
-            }
+        if (!consumeIngredients(contents, match, crafts)) {
+            return;
         }
         inventory.setStorageContents(contents);
+    }
+
+    private boolean canConsumeIngredients(ItemStack[] contents, RecipeMatch match, int crafts) {
+        return consumeIngredients(copyContents(contents), match, crafts);
+    }
+
+    private boolean consumeIngredients(ItemStack[] contents, RecipeMatch match, int crafts) {
+        if (crafts <= 0) {
+            return true;
+        }
+        List<Map.Entry<Integer, RecipeChoice>> choices = new ArrayList<>(match.ingredientChoices().entrySet());
+        choices.sort((left, right) -> Integer.compare(priority(right.getValue()), priority(left.getValue())));
+        for (Map.Entry<Integer, RecipeChoice> entry : choices) {
+            int remaining = crafts;
+            while (remaining > 0) {
+                int slotIndex = findBestMatchingInventorySlot(contents, entry.getValue());
+                if (slotIndex < 0) {
+                    return false;
+                }
+                ItemStack stack = contents[slotIndex];
+                stack.setAmount(stack.getAmount() - 1);
+                if (stack.getAmount() <= 0) {
+                    contents[slotIndex] = null;
+                }
+                remaining--;
+            }
+        }
+        return true;
+    }
+
+    private int findBestMatchingInventorySlot(ItemStack[] contents, RecipeChoice choice) {
+        int bestIndex = -1;
+        int bestAmount = Integer.MAX_VALUE;
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack stack = contents[i];
+            if (stack == null || stack.getType() == Material.AIR || !matchesRecipeChoice(choice, stack)) {
+                continue;
+            }
+            if (stack.getAmount() < bestAmount) {
+                bestAmount = stack.getAmount();
+                bestIndex = i;
+            }
+        }
+        return bestIndex;
+    }
+
+    private boolean matchesRecipeChoice(RecipeChoice choice, ItemStack stack) {
+        if (choice == null || stack == null || stack.getType() == Material.AIR) {
+            return false;
+        }
+        ItemStack single = stack.clone();
+        single.setAmount(1);
+        return choice.test(single);
+    }
+
+    private int priority(RecipeChoice choice) {
+        if (choice instanceof RecipeChoice.ExactChoice exactChoice) {
+            return exactChoice.getChoices().isEmpty() ? 0 : Integer.MAX_VALUE - exactChoice.getChoices().size();
+        }
+        if (choice instanceof RecipeChoice.MaterialChoice materialChoice) {
+            return materialChoice.getChoices().isEmpty() ? 0 : Integer.MAX_VALUE - materialChoice.getChoices().size();
+        }
+        return 1;
+    }
+
+    private ItemStack[] copyContents(ItemStack[] contents) {
+        ItemStack[] copy = new ItemStack[contents.length];
+        for (int i = 0; i < contents.length; i++) {
+            copy[i] = cloneOrNull(contents[i]);
+        }
+        return copy;
+    }
+
+    private Component resolveResultName(ItemStack result) {
+        ItemMeta meta = result.getItemMeta();
+        if (meta != null) {
+            if (meta.displayName() != null) {
+                return meta.displayName().colorIfAbsent(NamedTextColor.GREEN);
+            }
+            if (meta.hasItemName()) {
+                return meta.itemName().colorIfAbsent(NamedTextColor.GREEN);
+            }
+        }
+        return Component.translatable(result.getType().translationKey()).colorIfAbsent(NamedTextColor.GREEN);
     }
 
     private void adjustAmount(CraftingBannerData data, int delta) {
